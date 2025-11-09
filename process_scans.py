@@ -10,8 +10,10 @@ generate a summary for each document.
 import os
 import csv
 import json
+import re
 from pathlib import Path
 from typing import Dict, Optional
+from datetime import datetime
 import pdfplumber
 from anthropic import Anthropic
 from dotenv import load_dotenv
@@ -70,7 +72,7 @@ def analyze_document(client: Anthropic, text: str, filename: str) -> Optional[Di
    - A statement date
    - Any other relevant date shown on the document
    Format as YYYY-MM-DD if possible, or the format shown in the document
-3. "summary": A concise one-sentence summary of what this document is about
+3. "summary": A concise summary of what this document is about. IMPORTANT: Keep this to 60 characters or less.
 
 If you cannot determine any field with confidence, use "Unknown" for that field.
 
@@ -109,6 +111,81 @@ Respond with ONLY a JSON object in this exact format:
         return None
 
 
+def parse_date_to_yyyymmdd(date_str: str) -> str:
+    """
+    Parse a date string to YYYYMMDD format.
+
+    Args:
+        date_str: Date string in various formats
+
+    Returns:
+        Date in YYYYMMDD format or "REVIEWDATE" if unknown/unparseable
+    """
+    if not date_str or date_str.lower() in ["unknown", "n/a", ""]:
+        return "REVIEWDATE"
+
+    # Try common date formats
+    formats = [
+        "%Y-%m-%d",
+        "%Y/%m/%d",
+        "%m/%d/%Y",
+        "%m-%d-%Y",
+        "%B %d, %Y",
+        "%b %d, %Y",
+        "%d %B %Y",
+        "%d %b %Y",
+    ]
+
+    for fmt in formats:
+        try:
+            dt = datetime.strptime(date_str.strip(), fmt)
+            return dt.strftime("%Y%m%d")
+        except ValueError:
+            continue
+
+    # Try to extract YYYY-MM-DD pattern anywhere in the string
+    match = re.search(r'(\d{4})-(\d{2})-(\d{2})', date_str)
+    if match:
+        return f"{match.group(1)}{match.group(2)}{match.group(3)}"
+
+    return "REVIEWDATE"
+
+
+def create_suggested_filename(originator: str, date_str: str, summary: str,
+                              file_creation_time: datetime) -> str:
+    """
+    Create a suggested filename based on document metadata.
+
+    Format: YYYYMMDDTHHMMSS--OriginatorDescription__scansnap
+
+    Args:
+        originator: Document originator
+        date_str: Document date (will be parsed to YYYYMMDD)
+        summary: Document summary (should be 60 characters or less from LLM)
+        file_creation_time: File creation timestamp
+
+    Returns:
+        Suggested filename string
+    """
+    # Parse date to YYYYMMDD format
+    date_part = parse_date_to_yyyymmdd(date_str)
+
+    # Get timestamp from file creation time
+    time_part = file_creation_time.strftime("%H%M%S")
+
+    # Create description from originator + summary
+    description = f"{originator} {summary}"
+
+    # Replace spaces with dashes and remove special characters
+    description = re.sub(r'[^\w\s-]', '', description)  # Remove special chars except dash
+    description = re.sub(r'\s+', '-', description)       # Replace spaces with dashes
+    description = re.sub(r'-+', '-', description)        # Collapse multiple dashes
+    description = description.strip('-')                 # Remove leading/trailing dashes
+
+    # Build the final filename
+    return f"{date_part}T{time_part}--{description}__scansnap"
+
+
 def process_pdfs(incoming_dir: Path, output_csv: Path):
     """
     Process all PDFs in the incoming directory and create a CSV summary.
@@ -140,16 +217,26 @@ def process_pdfs(incoming_dir: Path, output_csv: Path):
     for i, pdf_path in enumerate(pdf_files, 1):
         print(f"[{i}/{len(pdf_files)}] Processing {pdf_path.name}...")
 
+        # Get file creation time
+        file_creation_time = datetime.fromtimestamp(pdf_path.stat().st_ctime)
+
         # Extract text
         text = extract_text_from_pdf(pdf_path)
 
         if not text:
             print(f"  ⚠ No text extracted, skipping")
+            originator = "Unknown (no text)"
+            date = "Unknown"
+            summary = "Could not extract text from PDF"
+            suggested_filename = create_suggested_filename(
+                originator, date, summary, file_creation_time
+            )
             results.append({
                 "filename": pdf_path.name,
-                "originator": "Unknown (no text)",
-                "date": "Unknown",
-                "summary": "Could not extract text from PDF"
+                "originator": originator,
+                "date": date,
+                "summary": summary,
+                "suggested_filename": suggested_filename
             })
             continue
 
@@ -157,19 +244,33 @@ def process_pdfs(incoming_dir: Path, output_csv: Path):
         analysis = analyze_document(client, text, pdf_path.name)
 
         if analysis:
+            originator = analysis.get("originator", "Unknown")
+            date = analysis.get("date", "Unknown")
+            summary = analysis.get("summary", "Unknown")
+            suggested_filename = create_suggested_filename(
+                originator, date, summary, file_creation_time
+            )
             results.append({
                 "filename": pdf_path.name,
-                "originator": analysis.get("originator", "Unknown"),
-                "date": analysis.get("date", "Unknown"),
-                "summary": analysis.get("summary", "Unknown")
+                "originator": originator,
+                "date": date,
+                "summary": summary,
+                "suggested_filename": suggested_filename
             })
-            print(f"  ✓ {analysis.get('originator', 'Unknown')} - {analysis.get('date', 'Unknown')}")
+            print(f"  ✓ {originator} - {date}")
         else:
+            originator = "Unknown (analysis failed)"
+            date = "Unknown"
+            summary = "Failed to analyze document"
+            suggested_filename = create_suggested_filename(
+                originator, date, summary, file_creation_time
+            )
             results.append({
                 "filename": pdf_path.name,
-                "originator": "Unknown (analysis failed)",
-                "date": "Unknown",
-                "summary": "Failed to analyze document"
+                "originator": originator,
+                "date": date,
+                "summary": summary,
+                "suggested_filename": suggested_filename
             })
 
         print()
@@ -177,7 +278,7 @@ def process_pdfs(incoming_dir: Path, output_csv: Path):
     # Write results to CSV
     print(f"Writing results to {output_csv}...")
     with open(output_csv, 'w', newline='', encoding='utf-8') as csvfile:
-        fieldnames = ['filename', 'originator', 'date', 'summary']
+        fieldnames = ['filename', 'originator', 'date', 'summary', 'suggested_filename']
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
 
         writer.writeheader()
