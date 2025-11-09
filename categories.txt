@@ -1,0 +1,78 @@
+# Categories extracted from existing_files.txt
+# Total unique categories: 68
+# Categories with similar names have been merged
+#
+# Merged categories:
+#   - sandieo → sandiego (typo fix)
+#   - mortage → mortgage (typo fix)
+#   - scanscap → scansnap (typo fix)
+#   - bank → banking (merged)
+
+online
+sandiego
+scan
+scansnap
+property
+banking
+danville
+medical
+mikhaila
+car
+home
+programming
+taxes2025
+creditcard
+insurance
+mortgage
+education
+nikolai
+citibank
+lisp
+taxes2024
+visa
+lucy
+hoa
+taxes2023
+utility
+school
+taxes
+kahlea
+vincent
+vwcredit
+mastercard
+retrocomputing
+python
+travel
+emacs
+household
+membership
+macosx
+rental
+retirement
+stephanie
+volvo
+apple
+bayarea
+comerica
+donation
+chase
+entertainment
+prius
+avis
+financials
+flex
+gssd
+health
+hx
+hyatt
+libertymutual
+marriott
+org
+pointloma
+racket
+scheme
+scifi
+shopping
+subscription
+swift
+vanguard
