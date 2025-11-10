@@ -111,6 +111,57 @@ Respond with ONLY a JSON object in this exact format:
         return None
 
 
+def categorize(client: Anthropic, text: str, filename: str, categories_content: str) -> Optional[str]:
+    """
+    Use Claude to categorize document text based on allowed categories.
+
+    Args:
+        client: Anthropic API client
+        text: Document text content
+        filename: Name of the PDF file
+        categories_content: Content of the categories.md file with rules and allowed categories
+
+    Returns:
+        Category string (e.g., "banking-citibank" or "medical") or None if categorization fails
+    """
+    if not text or len(text.strip()) < 50:
+        print(f"  ⚠ Insufficient text for categorization of {filename}")
+        return "reviewcategory"
+
+    prompt = f"""You are a document categorization system. Your task is to categorize the following document based on the rules and allowed categories provided.
+
+{categories_content}
+
+Document text to categorize:
+{text[:4000]}
+
+Based on the rules above:
+- Assign 1-4 categories from the allowed list
+- If multiple categories, sort them alphabetically and concatenate with '-'
+- If no applicable category is found, use "reviewcategory"
+- Check for special names (lucy, mikhaila, stephanie, vincent, kahlea) and include them as categories if mentioned
+
+Respond with ONLY the category string (e.g., "banking-citibank" or "medical" or "reviewcategory"). Do not include any explanation or additional text."""
+
+    try:
+        message = client.messages.create(
+            model="claude-3-haiku-20240307",
+            max_tokens=100,
+            messages=[{"role": "user", "content": prompt}]
+        )
+
+        response_text = message.content[0].text.strip()
+
+        # Remove any potential markdown formatting or extra whitespace
+        response_text = response_text.replace('`', '').strip()
+
+        return response_text
+
+    except Exception as e:
+        print(f"  ⚠ Error categorizing {filename}: {e}")
+        return "reviewcategory"
+
+
 def parse_date_to_yyyymmdd(date_str: str) -> str:
     """
     Parse a date string to YYYYMMDD format.
@@ -152,17 +203,18 @@ def parse_date_to_yyyymmdd(date_str: str) -> str:
 
 
 def create_suggested_filename(originator: str, date_str: str, summary: str,
-                              file_creation_time: datetime) -> str:
+                              file_creation_time: datetime, category: str = "scansnap") -> str:
     """
     Create a suggested filename based on document metadata.
 
-    Format: YYYYMMDDTHHMMSS--OriginatorDescription__scansnap
+    Format: YYYYMMDDTHHMMSS--OriginatorDescription__category
 
     Args:
         originator: Document originator
         date_str: Document date (will be parsed to YYYYMMDD)
         summary: Document summary (should be 60 characters or less from LLM)
         file_creation_time: File creation timestamp
+        category: Category string (default: "scansnap")
 
     Returns:
         Suggested filename string
@@ -183,7 +235,7 @@ def create_suggested_filename(originator: str, date_str: str, summary: str,
     description = description.strip('-')                 # Remove leading/trailing dashes
 
     # Build the final filename
-    return f"{date_part}T{time_part}--{description}__scansnap"
+    return f"{date_part}T{time_part}--{description}__{category}"
 
 
 def process_pdfs(incoming_dir: Path, output_csv: Path):
@@ -201,6 +253,16 @@ def process_pdfs(incoming_dir: Path, output_csv: Path):
                         "Please create a .env file with your API key.")
 
     client = Anthropic(api_key=api_key)
+
+    # Read categories.md file
+    script_dir = Path(__file__).parent
+    categories_file = script_dir / "categories.md"
+
+    if not categories_file.exists():
+        raise ValueError(f"categories.md file not found at {categories_file}")
+
+    with open(categories_file, 'r', encoding='utf-8') as f:
+        categories_content = f.read()
 
     # Get all PDF files
     pdf_files = sorted(incoming_dir.glob("*.pdf"))
@@ -228,14 +290,16 @@ def process_pdfs(incoming_dir: Path, output_csv: Path):
             originator = "Unknown (no text)"
             date = "Unknown"
             summary = "Could not extract text from PDF"
+            category = "reviewcategory"
             suggested_filename = create_suggested_filename(
-                originator, date, summary, file_creation_time
+                originator, date, summary, file_creation_time, category
             )
             results.append({
                 "filename": pdf_path.name,
                 "originator": originator,
                 "date": date,
                 "summary": summary,
+                "category": category,
                 "suggested_filename": suggested_filename
             })
             continue
@@ -243,33 +307,40 @@ def process_pdfs(incoming_dir: Path, output_csv: Path):
         # Analyze with Claude
         analysis = analyze_document(client, text, pdf_path.name)
 
+        # Categorize the document
+        category = categorize(client, text, pdf_path.name, categories_content)
+        if not category:
+            category = "reviewcategory"
+
         if analysis:
             originator = analysis.get("originator", "Unknown")
             date = analysis.get("date", "Unknown")
             summary = analysis.get("summary", "Unknown")
             suggested_filename = create_suggested_filename(
-                originator, date, summary, file_creation_time
+                originator, date, summary, file_creation_time, category
             )
             results.append({
                 "filename": pdf_path.name,
                 "originator": originator,
                 "date": date,
                 "summary": summary,
+                "category": category,
                 "suggested_filename": suggested_filename
             })
-            print(f"  ✓ {originator} - {date}")
+            print(f"  ✓ {originator} - {date} - {category}")
         else:
             originator = "Unknown (analysis failed)"
             date = "Unknown"
             summary = "Failed to analyze document"
             suggested_filename = create_suggested_filename(
-                originator, date, summary, file_creation_time
+                originator, date, summary, file_creation_time, category
             )
             results.append({
                 "filename": pdf_path.name,
                 "originator": originator,
                 "date": date,
                 "summary": summary,
+                "category": category,
                 "suggested_filename": suggested_filename
             })
 
@@ -278,7 +349,7 @@ def process_pdfs(incoming_dir: Path, output_csv: Path):
     # Write results to CSV
     print(f"Writing results to {output_csv}...")
     with open(output_csv, 'w', newline='', encoding='utf-8') as csvfile:
-        fieldnames = ['filename', 'originator', 'date', 'summary', 'suggested_filename']
+        fieldnames = ['filename', 'originator', 'date', 'summary', 'category', 'suggested_filename']
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
 
         writer.writeheader()
