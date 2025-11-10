@@ -1,17 +1,11 @@
-# Categories extracted from existing_files.txt
-# Total unique categories: 68
-# Categories with similar names have been merged
-#
-# Merged categories:
-#   - sandieo → sandiego (typo fix)
-#   - mortage → mortgage (typo fix)
-#   - scanscap → scansnap (typo fix)
-#   - bank → banking (merged)
+# Rules
+- A file has at least one but no more than 4 categories
+- If there is more than one category, sort them alphabetically
+- If no applicable category can be found, use "reviewcategory" instead
+- If a file mentions lucy, mikhaila, stephanie, vincent or kahlea explicitly, use the respective word as one of the categories
 
-online
+# Allowed Categories
 sandiego
-scan
-scansnap
 property
 banking
 danville
@@ -19,7 +13,6 @@ medical
 mikhaila
 car
 home
-programming
 taxes2025
 creditcard
 insurance
@@ -27,7 +20,6 @@ mortgage
 education
 nikolai
 citibank
-lisp
 taxes2024
 visa
 lucy
@@ -40,13 +32,9 @@ kahlea
 vincent
 vwcredit
 mastercard
-retrocomputing
-python
 travel
-emacs
 household
 membership
-macosx
 rental
 retirement
 stephanie
@@ -63,16 +51,10 @@ financials
 flex
 gssd
 health
-hx
 hyatt
 libertymutual
 marriott
-org
 pointloma
-racket
-scheme
-scifi
 shopping
 subscription
-swift
 vanguard
