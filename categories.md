@@ -1,8 +1,9 @@
 # Rules
 - A file has at least one but no more than 4 categories
 - If there is more than one category, sort them alphabetically
-- If no applicable category can be found, use "reviewcategory" instead
+- Use ONLY category words from the list below, If no applicable category can be found, use "reviewcategory" instead
 - If a file mentions lucy, mikhaila, stephanie, vincent or kahlea explicitly, use the respective word as one of the categories
+- Category words should be concatenated with '-'
 
 # Allowed Categories
 sandiego
