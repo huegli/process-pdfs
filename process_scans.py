@@ -122,7 +122,7 @@ def categorize(client: Anthropic, text: str, filename: str, categories_content: 
         categories_content: Content of the categories.md file with rules and allowed categories
 
     Returns:
-        Category string (e.g., "banking-citibank" or "medical") or None if categorization fails
+        Category string (e.g., "banking" or "medical") or None if categorization fails
     """
     if not text or len(text.strip()) < 50:
         print(f"  ⚠ Insufficient text for categorization of {filename}")
@@ -141,7 +141,8 @@ Based on the rules above:
 - If no applicable category is found, use "reviewcategory"
 - Check for special names (lucy, mikhaila, stephanie, vincent, kahlea) and include them as categories if mentioned
 
-Respond with ONLY the category string (e.g., "banking-citibank" or "medical" or "reviewcategory"). Do not include any explanation or additional text."""
+IMPORTANT: Respond with ONLY a single line containing the category string (e.g., "banking" or "medical" or "reviewcategory").
+Do NOT include any explanation, additional text, or multiple lines. Just the category string on one line."""
 
     try:
         message = client.messages.create(
@@ -154,6 +155,9 @@ Respond with ONLY the category string (e.g., "banking-citibank" or "medical" or 
 
         # Remove any potential markdown formatting or extra whitespace
         response_text = response_text.replace('`', '').strip()
+
+        # Take only the first line if multiple lines are returned
+        response_text = response_text.split('\n')[0].strip()
 
         return response_text
 
@@ -233,6 +237,7 @@ def create_suggested_filename(originator: str, date_str: str, summary: str,
     description = re.sub(r'\s+', '-', description)       # Replace spaces with dashes
     description = re.sub(r'-+', '-', description)        # Collapse multiple dashes
     description = description.strip('-')                 # Remove leading/trailing dashes
+    description = description.lower()                    # Convert to lowercase
 
     # Build the final filename
     return f"{date_part}T{time_part}--{description}__{category}"
@@ -279,8 +284,19 @@ def process_pdfs(incoming_dir: Path, output_csv: Path):
     for i, pdf_path in enumerate(pdf_files, 1):
         print(f"[{i}/{len(pdf_files)}] Processing {pdf_path.name}...")
 
-        # Get file creation time
-        file_creation_time = datetime.fromtimestamp(pdf_path.stat().st_ctime)
+        # Extract timestamp from filename (format: YYYYMMDDHHMMSS.pdf)
+        # If filename doesn't match pattern, fall back to file creation time
+        filename_stem = pdf_path.stem  # Remove .pdf extension
+        try:
+            if len(filename_stem) == 14 and filename_stem.isdigit():
+                # Parse YYYYMMDDHHMMSS format from filename
+                file_creation_time = datetime.strptime(filename_stem, "%Y%m%d%H%M%S")
+            else:
+                # Fall back to file system creation time
+                file_creation_time = datetime.fromtimestamp(pdf_path.stat().st_ctime)
+        except ValueError:
+            # Fall back to file system creation time if parsing fails
+            file_creation_time = datetime.fromtimestamp(pdf_path.stat().st_ctime)
 
         # Extract text
         text = extract_text_from_pdf(pdf_path)
