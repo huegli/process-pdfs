@@ -66,7 +66,7 @@ def call_llm(
     """
     if use_ollama:
         response = ollama.chat(
-            model='gemma:2b',
+            model='llama3:8b',
             messages=[{'role': 'user', 'content': prompt}]
         )
         return response['message']['content']
@@ -125,12 +125,18 @@ Respond with ONLY a JSON object in this exact format:
         response_text = call_llm(client, prompt, use_ollama, max_tokens=500)
 
         # Parse JSON response
-        # Handle cases where Claude might wrap JSON in markdown code blocks
+        # Handle cases where LLM might wrap JSON in markdown code blocks or add text
         if response_text.startswith("```"):
             # Extract JSON from code block
             lines = response_text.split("\n")
             json_lines = [line for line in lines if not line.startswith("```")]
             response_text = "\n".join(json_lines).strip()
+
+        # Try to find JSON object in the response (handles extra text before/after)
+        json_start = response_text.find("{")
+        json_end = response_text.rfind("}") + 1
+        if json_start != -1 and json_end > json_start:
+            response_text = response_text[json_start:json_end]
 
         result = json.loads(response_text)
         return result
@@ -183,14 +189,23 @@ Document text to categorize:
 {text[:4000]}
 
 Based on the rules above:
-- Assign 1-4 categories from the allowed list
+- Assign 1-4 categories from the allowed list (MAXIMUM 4, NO MORE)
+- Remove any duplicate categories
+- Use ONLY lowercase category words from the allowed list
 - If multiple categories, sort them alphabetically and concatenate with '-'
 - If no applicable category is found, use "reviewcategory"
 - Check for special names (lucy, mikhaila, stephanie, vincent, kahlea) and \
 include them as categories if mentioned
+- Do NOT add trailing dashes or spaces
+
+CRITICAL RULES:
+1. MAXIMUM 4 categories - if you have more than 4, keep only the 4 most relevant
+2. NO duplicate categories - each category should appear only once
+3. NO trailing dashes - "education-" is WRONG, "education" is CORRECT
+4. Use ONLY words from the allowed categories list above
 
 IMPORTANT: Respond with ONLY a single line containing the category string \
-(e.g., "banking" or "medical" or "reviewcategory").
+(e.g., "banking" or "medical" or "home-sandiego").
 Do NOT include any explanation, additional text, or multiple lines. Just the \
 category string on one line."""
 
@@ -203,12 +218,34 @@ category string on one line."""
         # Take only the first line if multiple lines are returned
         response_text = response_text.split('\n')[0].strip()
 
+        # Remove trailing dashes
+        response_text = response_text.rstrip('-')
+
+        # Split categories, remove duplicates, enforce max 4 rule
+        categories = response_text.split('-')
+        # Remove empty strings and duplicates while preserving order
+        seen = set()
+        unique_categories = []
+        for cat in categories:
+            cat = cat.strip()
+            if cat and cat not in seen:
+                seen.add(cat)
+                unique_categories.append(cat)
+
+        # Enforce maximum 4 categories
+        if len(unique_categories) > 4:
+            unique_categories = unique_categories[:4]
+
         # Add extra category if provided
         if extra_category:
-            # Split existing categories, add extra, sort, and rejoin
-            categories = response_text.split('-')
-            categories.append(extra_category)
-            response_text = "-".join(sorted(categories))
+            if extra_category not in unique_categories:
+                unique_categories.append(extra_category)
+                # Re-enforce max 4 after adding extra category
+                if len(unique_categories) > 4:
+                    unique_categories = unique_categories[:4]
+
+        # Sort and rejoin
+        response_text = "-".join(sorted(unique_categories))
 
         return response_text
 
@@ -315,7 +352,7 @@ def process_pdfs(
     # Initialize API client
     client = None
     if use_ollama:
-        print("Using Ollama API with gemma:2b model")
+        print("Using Ollama API with llama3:8b model")
         # No client needed for Ollama, it uses the ollama module directly
     else:
         print("Using Anthropic API with Claude")
@@ -468,7 +505,7 @@ def main():
         '--local',
         action='store_true',
         default=True,
-        help='Use local Ollama API with gemma:2b model (default)'
+        help='Use local Ollama API with llama3:8b model (default)'
     )
     parser.add_argument(
         '--anthropic',
