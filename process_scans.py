@@ -526,7 +526,6 @@ def main():
     parser.add_argument(
         '--local',
         action='store_true',
-        default=True,
         help='Use local Ollama API with llama3:8b model (default)'
     )
     parser.add_argument(
@@ -554,13 +553,8 @@ def main():
     )
     args = parser.parse_args()
 
-    # Check for conflicting options
-    if args.local and args.anthropic:
-        print("Error: Cannot use both --local and --anthropic options together")
-        return 1
-
     # Determine which API to use
-    # If --anthropic is specified, use Anthropic; otherwise use Ollama
+    # If --anthropic is specified, use Anthropic; otherwise use Ollama (default)
     use_ollama = not args.anthropic
 
     # Define paths
