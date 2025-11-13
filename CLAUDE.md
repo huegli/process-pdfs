@@ -55,6 +55,13 @@ This will:
 - `date`: Document date in YYYY-MM-DD format (when possible)
 - `summary`: One-sentence summary
 
-## Development Environment
+## Linting, Testing and Revision control
 
-The user has LispWorks expertise available via the `lispworks` skill. When working with Common Lisp code, LispWorks CAPI, or LispWorks-specific features, invoke the skill using the Skill tool.
+Each time you make a change, run the following
+
+```
+uv run flake8
+uv run pytest test_process_scans.py
+```
+
+<IF> and only if there are no lint or test issues, check in all changes with a meaningful commit message
