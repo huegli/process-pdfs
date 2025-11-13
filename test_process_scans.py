@@ -172,7 +172,9 @@ class TestAnalyzeDocumentMocked:
         mock_anthropic_client.messages.create.return_value = mock_message
 
         text = "This is a test document with enough text to analyze. " * 10
-        result = analyze_document(mock_anthropic_client, text, "test.pdf")
+        result = analyze_document(
+            mock_anthropic_client, text, "test.pdf", use_ollama=False
+        )
 
         assert result is not None
         assert result["originator"] == "Test Company"
@@ -194,7 +196,9 @@ class TestAnalyzeDocumentMocked:
         mock_anthropic_client.messages.create.return_value = mock_message
 
         text = "This is a test document with enough text to analyze. " * 10
-        result = analyze_document(mock_anthropic_client, text, "test.pdf")
+        result = analyze_document(
+            mock_anthropic_client, text, "test.pdf", use_ollama=False
+        )
 
         assert result is not None
         assert result["originator"] == "Test"
@@ -203,14 +207,19 @@ class TestAnalyzeDocumentMocked:
 class TestCategorize:
     """Tests for categorize function"""
 
-    def test_categorize_with_valid_response(self, mock_anthropic_client, categories_content):
+    def test_categorize_with_valid_response(
+        self, mock_anthropic_client, categories_content
+    ):
         # Mock the LLM response
         mock_message = Mock()
         mock_message.content = [Mock(text='banking-home-sandiego')]
         mock_anthropic_client.messages.create.return_value = mock_message
 
         text = "This is a test document with enough text to categorize. " * 10
-        result = categorize(mock_anthropic_client, text, "test.pdf", categories_content)
+        result = categorize(
+            mock_anthropic_client, text, "test.pdf",
+            categories_content, use_ollama=False
+        )
 
         assert result == "banking-home-sandiego"
 
@@ -237,25 +246,35 @@ class TestCategorize:
     #     # Should be sorted alphabetically
     #     assert result == "banking-home-testcat"
 
-    def test_categorize_removes_markdown(self, mock_anthropic_client, categories_content):
+    def test_categorize_removes_markdown(
+        self, mock_anthropic_client, categories_content
+    ):
         # Mock response with backticks
         mock_message = Mock()
         mock_message.content = [Mock(text='`banking-home`')]
         mock_anthropic_client.messages.create.return_value = mock_message
 
         text = "This is a test document with enough text to categorize. " * 10
-        result = categorize(mock_anthropic_client, text, "test.pdf", categories_content)
+        result = categorize(
+            mock_anthropic_client, text, "test.pdf",
+            categories_content, use_ollama=False
+        )
 
         assert result == "banking-home"
 
-    def test_categorize_takes_first_line_only(self, mock_anthropic_client, categories_content):
+    def test_categorize_takes_first_line_only(
+        self, mock_anthropic_client, categories_content
+    ):
         # Mock response with multiple lines
         mock_message = Mock()
         mock_message.content = [Mock(text='banking-home\nSome extra text\nMore text')]
         mock_anthropic_client.messages.create.return_value = mock_message
 
         text = "This is a test document with enough text to categorize. " * 10
-        result = categorize(mock_anthropic_client, text, "test.pdf", categories_content)
+        result = categorize(
+            mock_anthropic_client, text, "test.pdf",
+            categories_content, use_ollama=False
+        )
 
         assert result == "banking-home"
 
@@ -305,7 +324,7 @@ class TestProcessPDFsWithTestData:
         """Test processing a single PDF with predefined test data"""
 
         # Set up mock returns based on test_data
-        def analyze_side_effect(client, text, filename):
+        def analyze_side_effect(client, text, filename, use_ollama=True):
             if filename in test_data:
                 data = test_data[filename]
                 return {
@@ -315,7 +334,9 @@ class TestProcessPDFsWithTestData:
                 }
             return None
 
-        def categorize_side_effect(client, text, filename, categories_content):
+        def categorize_side_effect(
+            client, text, filename, categories_content, use_ollama=True
+        ):
             if filename in test_data:
                 category = test_data[filename]["category"]
                 return category

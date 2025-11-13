@@ -1,21 +1,23 @@
 #!/usr/bin/env python3
 """
-Process scanned PDF files and extract structured information using Claude API.
+Process scanned PDF files and extract structured information using LLM API.
 
 This script reads PDF files from the Sept07-Nov09-Incoming/ directory, extracts
-text content, and uses Claude to identify the originator, document date, and
-generate a summary for each document.
+text content, and uses an LLM (Ollama or Anthropic) to identify the originator,
+document date, and generate a summary for each document.
 """
 
 import os
 import csv
 import json
 import re
+import argparse
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, Any
 from datetime import datetime
 import pdfplumber
 from anthropic import Anthropic
+import ollama
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -47,14 +49,47 @@ def extract_text_from_pdf(pdf_path: Path, max_pages: int = 2) -> str:
         return ""
 
 
-def analyze_document(client: Anthropic, text: str, filename: str) -> Optional[Dict[str, str]]:
+def call_llm(
+    client: Any, prompt: str, use_ollama: bool, max_tokens: int = 500
+) -> str:
     """
-    Use Claude to analyze document text and extract structured information.
+    Call either Ollama or Anthropic API based on configuration.
 
     Args:
-        client: Anthropic API client
+        client: Either Anthropic client or None for Ollama
+        prompt: The prompt to send to the LLM
+        use_ollama: If True, use Ollama API; otherwise use Anthropic
+        max_tokens: Maximum tokens for response (Anthropic only)
+
+    Returns:
+        The LLM response text
+    """
+    if use_ollama:
+        response = ollama.chat(
+            model='gemma:2b',
+            messages=[{'role': 'user', 'content': prompt}]
+        )
+        return response['message']['content']
+    else:
+        message = client.messages.create(
+            model="claude-3-haiku-20240307",
+            max_tokens=max_tokens,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        return message.content[0].text.strip()
+
+
+def analyze_document(
+    client: Any, text: str, filename: str, use_ollama: bool = True
+) -> Optional[Dict[str, str]]:
+    """
+    Use LLM to analyze document text and extract structured information.
+
+    Args:
+        client: LLM API client (Anthropic) or None for Ollama
         text: Document text content
         filename: Name of the PDF file
+        use_ollama: If True, use Ollama; otherwise use Anthropic
 
     Returns:
         Dictionary with originator, date, and summary, or None if analysis fails
@@ -87,13 +122,7 @@ Respond with ONLY a JSON object in this exact format:
 {{"originator": "...", "date": "...", "summary": "..."}}"""
 
     try:
-        message = client.messages.create(
-            model="claude-3-haiku-20240307",
-            max_tokens=500,
-            messages=[{"role": "user", "content": prompt}]
-        )
-
-        response_text = message.content[0].text.strip()
+        response_text = call_llm(client, prompt, use_ollama, max_tokens=500)
 
         # Parse JSON response
         # Handle cases where Claude might wrap JSON in markdown code blocks
@@ -116,19 +145,24 @@ Respond with ONLY a JSON object in this exact format:
 
 
 def categorize(
-    client: Anthropic, text: str, filename: str, categories_content: str
+    client: Any,
+    text: str,
+    filename: str,
+    categories_content: str,
+    use_ollama: bool = True
 ) -> Optional[str]:
     """
-    Use Claude to categorize document text based on allowed categories.
+    Use LLM to categorize document text based on allowed categories.
 
     Args:
-        client: Anthropic API client
+        client: LLM API client (Anthropic) or None for Ollama
         text: Document text content
         filename: Name of the PDF file
-        categories_content: Content of the categories.md file with rules and allowed categories
+        categories_content: Content of the categories.md file
+        use_ollama: If True, use Ollama; otherwise use Anthropic
 
     Returns:
-        Category string (e.g., "banking" or "medical") or None if categorization fails
+        Category string (e.g., "banking" or "medical")
     """
     if not text or len(text.strip()) < 50:
         print(f"  ⚠ Insufficient text for categorization of {filename}")
@@ -156,13 +190,7 @@ Do NOT include any explanation, additional text, or multiple lines. Just the \
 category string on one line."""
 
     try:
-        message = client.messages.create(
-            model="claude-3-haiku-20240307",
-            max_tokens=100,
-            messages=[{"role": "user", "content": prompt}]
-        )
-
-        response_text = message.content[0].text.strip()
+        response_text = call_llm(client, prompt, use_ollama, max_tokens=100)
 
         # Remove any potential markdown formatting or extra whitespace
         response_text = response_text.replace('`', '').strip()
@@ -254,23 +282,31 @@ def create_suggested_filename(originator: str, date_str: str, summary: str,
     return f"{date_part}T{time_part}--{description}__{category}"
 
 
-def process_pdfs(incoming_dir: Path, output_csv: Path):
+def process_pdfs(
+    incoming_dir: Path, output_csv: Path, use_ollama: bool = True
+):
     """
     Process all PDFs in the incoming directory and create a CSV summary.
 
     Args:
         incoming_dir: Path to directory containing PDF files
         output_csv: Path where the output CSV should be saved
+        use_ollama: If True, use Ollama API; otherwise use Anthropic
     """
-    # Initialize Anthropic client
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    if not api_key:
-        raise ValueError(
-            "ANTHROPIC_API_KEY not found in environment variables. "
-            "Please create a .env file with your API key."
-        )
-
-    client = Anthropic(api_key=api_key)
+    # Initialize API client
+    client = None
+    if use_ollama:
+        print("Using Ollama API with gemma:2b model")
+        # No client needed for Ollama, it uses the ollama module directly
+    else:
+        print("Using Anthropic API with Claude")
+        api_key = os.getenv("ANTHROPIC_API_KEY")
+        if not api_key:
+            raise ValueError(
+                "ANTHROPIC_API_KEY not found in environment variables. "
+                "Please create a .env file with your API key."
+            )
+        client = Anthropic(api_key=api_key)
 
     # Read categories.md file
     script_dir = Path(__file__).parent
@@ -339,11 +375,13 @@ def process_pdfs(incoming_dir: Path, output_csv: Path):
             })
             continue
 
-        # Analyze with Claude
-        analysis = analyze_document(client, text, pdf_path.name)
+        # Analyze with LLM
+        analysis = analyze_document(client, text, pdf_path.name, use_ollama)
 
         # Categorize the document
-        category = categorize(client, text, pdf_path.name, categories_content)
+        category = categorize(
+            client, text, pdf_path.name, categories_content, use_ollama
+        )
         if not category:
             category = "reviewcategory"
 
@@ -399,6 +437,33 @@ def process_pdfs(incoming_dir: Path, output_csv: Path):
 
 def main():
     """Main entry point for the script."""
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(
+        description="Process scanned PDF files and extract structured "
+                    "information using LLM API."
+    )
+    parser.add_argument(
+        '--local',
+        action='store_true',
+        default=True,
+        help='Use local Ollama API with gemma:2b model (default)'
+    )
+    parser.add_argument(
+        '--anthropic',
+        action='store_true',
+        help='Use Anthropic API with Claude'
+    )
+    args = parser.parse_args()
+
+    # Check for conflicting options
+    if args.local and args.anthropic:
+        print("Error: Cannot use both --local and --anthropic options together")
+        return 1
+
+    # Determine which API to use
+    # If --anthropic is specified, use Anthropic; otherwise use Ollama
+    use_ollama = not args.anthropic
+
     # Define paths
     script_dir = Path(__file__).parent
     incoming_dir = script_dir / "Sept07-Nov09-Incoming"
@@ -407,11 +472,11 @@ def main():
     # Verify incoming directory exists
     if not incoming_dir.exists():
         print(f"Error: Directory not found: {incoming_dir}")
-        return
+        return 1
 
     # Process PDFs
     try:
-        process_pdfs(incoming_dir, output_csv)
+        process_pdfs(incoming_dir, output_csv, use_ollama)
     except Exception as e:
         print(f"Error: {e}")
         raise
