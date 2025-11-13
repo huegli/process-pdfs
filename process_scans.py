@@ -101,17 +101,25 @@ def analyze_document(
     prompt = f"""Analyze this document and extract the following information in \
 JSON format:
 
-1. "originator": The company, organization, or entity that created/sent this \
-document (look for letterheads, logos, company names)
-2. "date": The primary document date (NOT the scan date or filename date). \
-This could be:
-   - The document creation date
-   - A due date (for bills/invoices)
-   - A statement date
-   - Any other relevant date shown on the document
-   Format as YYYY-MM-DD if possible, or the format shown in the document
-3. "summary": A concise summary of what this document is about. IMPORTANT: \
-Keep this to 60 characters or less.
+1. "originator": The PRIMARY company, organization, or entity that created/sent \
+this document.
+   - Extract ONLY the main company name (e.g., "Chase", "Vanguard", "PG&E")
+   - Do NOT include full legal names, addresses, or plan names
+   - Look for letterheads, logos, and company names at the top of the document
+   - For medical offices, use just the doctor's name (e.g., "Dr. Smith")
+
+2. "date": The primary document date (NOT the scan date or filename date).
+   - This could be: document date, due date, statement date, or billing date
+   - Format as YYYY-MM-DD if possible
+   - IMPORTANT: Only use dates that appear IN THE DOCUMENT TEXT
+   - Do NOT make up dates or use dates from the future
+   - Verify the year makes sense (should be between 2015-2025)
+   - If no clear date is visible, use "Unknown"
+
+3. "summary": A concise summary of what this document is about.
+   - MAXIMUM 60 characters including spaces
+   - Focus on document type (e.g., "Credit card statement", "Medical bill")
+   - Do NOT include names, amounts, or excessive detail
 
 If you cannot determine any field with confidence, use "Unknown" for that field.
 
@@ -188,21 +196,35 @@ provided.
 Document text to categorize:
 {text[:4000]}
 
-Based on the rules above:
-- Assign 1-4 categories from the allowed list (MAXIMUM 4, NO MORE)
-- Remove any duplicate categories
-- Use ONLY lowercase category words from the allowed list
-- If multiple categories, sort them alphabetically and concatenate with '-'
-- If no applicable category is found, use "reviewcategory"
-- Check for special names (lucy, mikhaila, stephanie, vincent, kahlea) and \
-include them as categories if mentioned
-- Do NOT add trailing dashes or spaces
+CATEGORIZATION STRATEGY:
+1. Identify the PRIMARY purpose of this document (choose ONE main category)
+2. Add 1-2 secondary categories ONLY if they are directly relevant
+3. Prefer FEWER categories over MORE categories
+4. Aim for 1-3 categories total (MAXIMUM 4 if absolutely necessary)
+
+CATEGORY SELECTION RULES:
+- "medical" - Only for medical bills, doctor visits, prescriptions, medical records
+- "banking" - Only for bank statements, checks, deposits (NOT credit cards)
+- "creditcard" - Only for actual credit card statements (NOT other invoices)
+- "insurance" - Only for insurance policies, claims, EOBs
+- "home" or location tags - Only if document is about property/residence
+- "education" - Only for school-related documents (tuition, grades, etc.)
+- Special names (lucy, mikhaila, stephanie, vincent, kahlea) - ONLY if the \
+document is specifically ABOUT or FOR that person
+
+IMPORTANT RESTRICTIONS:
+- Do NOT add "creditcard" to every invoice or bill
+- Do NOT add "education" to financial documents unless they're school-related
+- Do NOT add location tags unless the document relates to a specific property
+- Do NOT add person names unless the document is specifically for that person
 
 CRITICAL RULES:
-1. MAXIMUM 4 categories - if you have more than 4, keep only the 4 most relevant
+1. MAXIMUM 4 categories - prefer 2-3 categories
 2. NO duplicate categories - each category should appear only once
 3. NO trailing dashes - "education-" is WRONG, "education" is CORRECT
 4. Use ONLY words from the allowed categories list above
+5. If no applicable category is found, use "reviewcategory"
+6. Sort alphabetically and concatenate with '-'
 
 IMPORTANT: Respond with ONLY a single line containing the category string \
 (e.g., "banking" or "medical" or "home-sandiego").
