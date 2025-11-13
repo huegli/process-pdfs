@@ -481,6 +481,18 @@ def main():
         default=None,
         help='Extra category tag to append to all documents'
     )
+    parser.add_argument(
+        '--input',
+        type=str,
+        default='Incoming',
+        help='Directory from which to read PDF files (default: Incoming)'
+    )
+    parser.add_argument(
+        '--output',
+        type=str,
+        default='scan_summary.csv',
+        help='Output CSV filename (default: scan_summary.csv)'
+    )
     args = parser.parse_args()
 
     # Check for conflicting options
@@ -494,8 +506,20 @@ def main():
 
     # Define paths
     script_dir = Path(__file__).parent
-    incoming_dir = script_dir / "Sept07-Nov09-Incoming"
-    output_csv = script_dir / "scan_summary.csv"
+
+    # Handle input directory - can be absolute or relative to script directory
+    input_path = Path(args.input)
+    if input_path.is_absolute():
+        incoming_dir = input_path
+    else:
+        incoming_dir = script_dir / args.input
+
+    # Handle output file - can be absolute or relative to script directory
+    output_path = Path(args.output)
+    if output_path.is_absolute():
+        output_csv = output_path
+    else:
+        output_csv = script_dir / args.output
 
     # Verify incoming directory exists
     if not incoming_dir.exists():
