@@ -63,16 +63,20 @@ def analyze_document(client: Anthropic, text: str, filename: str) -> Optional[Di
         print(f"  ⚠ Insufficient text extracted from {filename}")
         return None
 
-    prompt = f"""Analyze this document and extract the following information in JSON format:
+    prompt = f"""Analyze this document and extract the following information in \
+JSON format:
 
-1. "originator": The company, organization, or entity that created/sent this document (look for letterheads, logos, company names)
-2. "date": The primary document date (NOT the scan date or filename date). This could be:
+1. "originator": The company, organization, or entity that created/sent this \
+document (look for letterheads, logos, company names)
+2. "date": The primary document date (NOT the scan date or filename date). \
+This could be:
    - The document creation date
    - A due date (for bills/invoices)
    - A statement date
    - Any other relevant date shown on the document
    Format as YYYY-MM-DD if possible, or the format shown in the document
-3. "summary": A concise summary of what this document is about. IMPORTANT: Keep this to 60 characters or less.
+3. "summary": A concise summary of what this document is about. IMPORTANT: \
+Keep this to 60 characters or less.
 
 If you cannot determine any field with confidence, use "Unknown" for that field.
 
@@ -111,7 +115,9 @@ Respond with ONLY a JSON object in this exact format:
         return None
 
 
-def categorize(client: Anthropic, text: str, filename: str, categories_content: str) -> Optional[str]:
+def categorize(
+    client: Anthropic, text: str, filename: str, categories_content: str
+) -> Optional[str]:
     """
     Use Claude to categorize document text based on allowed categories.
 
@@ -128,7 +134,9 @@ def categorize(client: Anthropic, text: str, filename: str, categories_content: 
         print(f"  ⚠ Insufficient text for categorization of {filename}")
         return "reviewcategory"
 
-    prompt = f"""You are a document categorization system. Your task is to categorize the following document based on the rules and allowed categories provided.
+    prompt = f"""You are a document categorization system. Your task is to \
+categorize the following document based on the rules and allowed categories \
+provided.
 
 {categories_content}
 
@@ -139,10 +147,13 @@ Based on the rules above:
 - Assign 1-4 categories from the allowed list
 - If multiple categories, sort them alphabetically and concatenate with '-'
 - If no applicable category is found, use "reviewcategory"
-- Check for special names (lucy, mikhaila, stephanie, vincent, kahlea) and include them as categories if mentioned
+- Check for special names (lucy, mikhaila, stephanie, vincent, kahlea) and \
+include them as categories if mentioned
 
-IMPORTANT: Respond with ONLY a single line containing the category string (e.g., "banking" or "medical" or "reviewcategory").
-Do NOT include any explanation, additional text, or multiple lines. Just the category string on one line."""
+IMPORTANT: Respond with ONLY a single line containing the category string \
+(e.g., "banking" or "medical" or "reviewcategory").
+Do NOT include any explanation, additional text, or multiple lines. Just the \
+category string on one line."""
 
     try:
         message = client.messages.create(
@@ -254,8 +265,10 @@ def process_pdfs(incoming_dir: Path, output_csv: Path):
     # Initialize Anthropic client
     api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
-        raise ValueError("ANTHROPIC_API_KEY not found in environment variables. "
-                        "Please create a .env file with your API key.")
+        raise ValueError(
+            "ANTHROPIC_API_KEY not found in environment variables. "
+            "Please create a .env file with your API key."
+        )
 
     client = Anthropic(api_key=api_key)
 
@@ -290,19 +303,25 @@ def process_pdfs(incoming_dir: Path, output_csv: Path):
         try:
             if len(filename_stem) == 14 and filename_stem.isdigit():
                 # Parse YYYYMMDDHHMMSS format from filename
-                file_creation_time = datetime.strptime(filename_stem, "%Y%m%d%H%M%S")
+                file_creation_time = datetime.strptime(
+                    filename_stem, "%Y%m%d%H%M%S"
+                )
             else:
                 # Fall back to file system creation time
-                file_creation_time = datetime.fromtimestamp(pdf_path.stat().st_ctime)
+                file_creation_time = datetime.fromtimestamp(
+                    pdf_path.stat().st_ctime
+                )
         except ValueError:
             # Fall back to file system creation time if parsing fails
-            file_creation_time = datetime.fromtimestamp(pdf_path.stat().st_ctime)
+            file_creation_time = datetime.fromtimestamp(
+                pdf_path.stat().st_ctime
+            )
 
         # Extract text
         text = extract_text_from_pdf(pdf_path)
 
         if not text:
-            print(f"  ⚠ No text extracted, skipping")
+            print("  ⚠ No text extracted, skipping")
             originator = "Unknown (no text)"
             date = "Unknown"
             summary = "Could not extract text from PDF"
@@ -365,7 +384,10 @@ def process_pdfs(incoming_dir: Path, output_csv: Path):
     # Write results to CSV
     print(f"Writing results to {output_csv}...")
     with open(output_csv, 'w', newline='', encoding='utf-8') as csvfile:
-        fieldnames = ['filename', 'originator', 'date', 'summary', 'category', 'suggested_filename']
+        fieldnames = [
+            'filename', 'originator', 'date', 'summary',
+            'category', 'suggested_filename'
+        ]
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
 
         writer.writeheader()

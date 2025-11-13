@@ -3,7 +3,7 @@
 
 import re
 from collections import Counter
-from pathlib import Path
+
 
 def extract_categories(filename):
     """Extract categories from a filename.
@@ -19,6 +19,7 @@ def extract_categories(filename):
         return [cat.strip().lower() for cat in categories if cat.strip()]
     return []
 
+
 def merge_categories(category):
     """Merge similar categories and fix typos."""
     # Define merge rules
@@ -30,6 +31,7 @@ def merge_categories(category):
     }
 
     return merge_map.get(category, category)
+
 
 def main():
     all_categories = []
@@ -79,6 +81,7 @@ def main():
             f.write(f"{category}\n")
 
     print("\nCategories written to categories.txt")
+
 
 if __name__ == '__main__':
     main()

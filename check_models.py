@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
 def test_models():
     """Test various Claude model identifiers to see which ones work."""
     api_key = os.getenv("ANTHROPIC_API_KEY")
@@ -41,13 +42,13 @@ def test_models():
     for model in models_to_try:
         try:
             print(f"Testing: {model}...", end=" ")
-            response = client.messages.create(
+            client.messages.create(
                 model=model,
                 max_tokens=10,
                 messages=[{"role": "user", "content": "Hi"}]
             )
             print("✓ WORKS")
-            print(f"  → This model is available! Use this in process_scans.py")
+            print("  → This model is available! Use this in process_scans.py")
             return model  # Return the first working model
         except Exception as e:
             error_str = str(e)
@@ -65,6 +66,7 @@ def test_models():
     print("  2. Your API key has active billing/credits")
     print("  3. Visit https://console.anthropic.com/settings/keys")
     return None
+
 
 if __name__ == "__main__":
     test_models()
