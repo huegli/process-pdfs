@@ -149,7 +149,8 @@ def categorize(
     text: str,
     filename: str,
     categories_content: str,
-    use_ollama: bool = True
+    use_ollama: bool = True,
+    extra_category: Optional[str] = None
 ) -> Optional[str]:
     """
     Use LLM to categorize document text based on allowed categories.
@@ -160,13 +161,17 @@ def categorize(
         filename: Name of the PDF file
         categories_content: Content of the categories.md file
         use_ollama: If True, use Ollama; otherwise use Anthropic
+        extra_category: Optional extra category to append to all results
 
     Returns:
         Category string (e.g., "banking" or "medical")
     """
     if not text or len(text.strip()) < 50:
         print(f"  ⚠ Insufficient text for categorization of {filename}")
-        return "reviewcategory"
+        base_category = "reviewcategory"
+        if extra_category:
+            return "-".join(sorted([base_category, extra_category]))
+        return base_category
 
     prompt = f"""You are a document categorization system. Your task is to \
 categorize the following document based on the rules and allowed categories \
@@ -198,11 +203,21 @@ category string on one line."""
         # Take only the first line if multiple lines are returned
         response_text = response_text.split('\n')[0].strip()
 
+        # Add extra category if provided
+        if extra_category:
+            # Split existing categories, add extra, sort, and rejoin
+            categories = response_text.split('-')
+            categories.append(extra_category)
+            response_text = "-".join(sorted(categories))
+
         return response_text
 
     except Exception as e:
         print(f"  ⚠ Error categorizing {filename}: {e}")
-        return "reviewcategory"
+        base_category = "reviewcategory"
+        if extra_category:
+            return "-".join(sorted([base_category, extra_category]))
+        return base_category
 
 
 def parse_date_to_yyyymmdd(date_str: str) -> str:
@@ -283,7 +298,10 @@ def create_suggested_filename(originator: str, date_str: str, summary: str,
 
 
 def process_pdfs(
-    incoming_dir: Path, output_csv: Path, use_ollama: bool = True
+    incoming_dir: Path,
+    output_csv: Path,
+    use_ollama: bool = True,
+    extra_category: Optional[str] = None
 ):
     """
     Process all PDFs in the incoming directory and create a CSV summary.
@@ -292,6 +310,7 @@ def process_pdfs(
         incoming_dir: Path to directory containing PDF files
         output_csv: Path where the output CSV should be saved
         use_ollama: If True, use Ollama API; otherwise use Anthropic
+        extra_category: Optional extra category to append to all documents
     """
     # Initialize API client
     client = None
@@ -380,10 +399,13 @@ def process_pdfs(
 
         # Categorize the document
         category = categorize(
-            client, text, pdf_path.name, categories_content, use_ollama
+            client, text, pdf_path.name, categories_content,
+            use_ollama, extra_category
         )
         if not category:
             category = "reviewcategory"
+            if extra_category:
+                category = "-".join(sorted([category, extra_category]))
 
         if analysis:
             originator = analysis.get("originator", "Unknown")
@@ -453,6 +475,12 @@ def main():
         action='store_true',
         help='Use Anthropic API with Claude'
     )
+    parser.add_argument(
+        '--category',
+        type=str,
+        default=None,
+        help='Extra category tag to append to all documents'
+    )
     args = parser.parse_args()
 
     # Check for conflicting options
@@ -476,7 +504,7 @@ def main():
 
     # Process PDFs
     try:
-        process_pdfs(incoming_dir, output_csv, use_ollama)
+        process_pdfs(incoming_dir, output_csv, use_ollama, args.category)
     except Exception as e:
         print(f"Error: {e}")
         raise

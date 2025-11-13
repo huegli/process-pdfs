@@ -223,28 +223,27 @@ class TestCategorize:
 
         assert result == "banking-home-sandiego"
 
+    def test_categorize_with_extra_category(
+        self, mock_anthropic_client, categories_content
+    ):
+        # Mock the LLM response
+        mock_message = Mock()
+        mock_message.content = [Mock(text='banking-home')]
+        mock_anthropic_client.messages.create.return_value = mock_message
+
+        text = "This is a test document with enough text to categorize. " * 10
+        result = categorize(
+            mock_anthropic_client, text, "test.pdf",
+            categories_content, use_ollama=False, extra_category="testcat"
+        )
+
+        # Should be sorted alphabetically
+        assert result == "banking-home-testcat"
+
     def test_categorize_with_insufficient_text(self, mock_anthropic_client, categories_content):
         text = "Too short"
         result = categorize(mock_anthropic_client, text, "test.pdf", categories_content)
         assert result == "reviewcategory"
-
-    # Note: extra_category feature not implemented in current version
-    # def test_categorize_with_extra_category(
-    #     self, mock_anthropic_client, categories_content
-    # ):
-    #     # Mock the LLM response
-    #     mock_message = Mock()
-    #     mock_message.content = [Mock(text='banking-home')]
-    #     mock_anthropic_client.messages.create.return_value = mock_message
-
-    #     text = "This is a test document with enough text to categorize. " * 10
-    #     result = categorize(
-    #         mock_anthropic_client, text, "test.pdf",
-    #         categories_content, extra_category="testcat"
-    #     )
-
-    #     # Should be sorted alphabetically
-    #     assert result == "banking-home-testcat"
 
     def test_categorize_removes_markdown(
         self, mock_anthropic_client, categories_content
@@ -335,10 +334,15 @@ class TestProcessPDFsWithTestData:
             return None
 
         def categorize_side_effect(
-            client, text, filename, categories_content, use_ollama=True
+            client, text, filename, categories_content,
+            use_ollama=True, extra_category=None
         ):
             if filename in test_data:
                 category = test_data[filename]["category"]
+                if extra_category:
+                    categories = category.split('-')
+                    categories.append(extra_category)
+                    category = "-".join(sorted(categories))
                 return category
             return "reviewcategory"
 
