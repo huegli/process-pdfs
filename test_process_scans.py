@@ -323,7 +323,7 @@ class TestProcessPDFsWithTestData:
         """Test processing a single PDF with predefined test data"""
 
         # Set up mock returns based on test_data
-        def analyze_side_effect(client, text, filename, use_ollama=True):
+        def analyze_side_effect(client, text, filename, use_ollama=True, model_type='ollama'):
             if filename in test_data:
                 data = test_data[filename]
                 return {
@@ -335,7 +335,7 @@ class TestProcessPDFsWithTestData:
 
         def categorize_side_effect(
             client, text, filename, categories_content,
-            use_ollama=True, extra_category=None
+            use_ollama=True, model_type='ollama', extra_category=None
         ):
             if filename in test_data:
                 category = test_data[filename]["category"]

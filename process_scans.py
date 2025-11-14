@@ -2,9 +2,14 @@
 """
 Process scanned PDF files and extract structured information using LLM API.
 
-This script reads PDF files from the Sept07-Nov09-Incoming/ directory, extracts
-text content, and uses an LLM (Ollama or Anthropic) to identify the originator,
-document date, and generate a summary for each document.
+This script reads PDF files from directories, extracts text content, and uses
+LLMs (Ollama and/or Anthropic) to identify the originator, document date,
+and generate a summary for each document.
+
+Supports three modes:
+- Ollama only (--local): Fast, free, local processing
+- Anthropic only (--anthropic): High quality, API-based processing
+- Hybrid (--hybrid): Ollama first, Anthropic refinement for uncertain results
 """
 
 import os
@@ -19,6 +24,13 @@ import pdfplumber
 from anthropic import Anthropic
 import ollama
 from dotenv import load_dotenv
+
+# Import new modules
+from prompts import get_analysis_prompt, get_categorization_prompt
+from quality_validators import (
+    should_refine_with_anthropic,
+    merge_results
+)
 
 # Load environment variables
 load_dotenv()
@@ -80,7 +92,11 @@ def call_llm(
 
 
 def analyze_document(
-    client: Any, text: str, filename: str, use_ollama: bool = True
+    client: Any,
+    text: str,
+    filename: str,
+    use_ollama: bool = True,
+    model_type: str = 'ollama'
 ) -> Optional[Dict[str, str]]:
     """
     Use LLM to analyze document text and extract structured information.
@@ -90,6 +106,7 @@ def analyze_document(
         text: Document text content
         filename: Name of the PDF file
         use_ollama: If True, use Ollama; otherwise use Anthropic
+        model_type: 'ollama' or 'anthropic' for model-specific prompts
 
     Returns:
         Dictionary with originator, date, and summary, or None if analysis fails
@@ -98,36 +115,8 @@ def analyze_document(
         print(f"  ⚠ Insufficient text extracted from {filename}")
         return None
 
-    prompt = f"""Analyze this document and extract the following information in \
-JSON format:
-
-1. "originator": The PRIMARY company, organization, or entity that created/sent \
-this document.
-   - Extract ONLY the main company name (e.g., "Chase", "Vanguard", "PG&E")
-   - Do NOT include full legal names, addresses, or plan names
-   - Look for letterheads, logos, and company names at the top of the document
-   - For medical offices, use just the doctor's name (e.g., "Dr. Smith")
-
-2. "date": The primary document date (NOT the scan date or filename date).
-   - This could be: document date, due date, statement date, or billing date
-   - Format as YYYY-MM-DD if possible
-   - IMPORTANT: Only use dates that appear IN THE DOCUMENT TEXT
-   - Do NOT make up dates or use dates from the future
-   - Verify the year makes sense (should be between 2015-2025)
-   - If no clear date is visible, use "Unknown"
-
-3. "summary": A concise summary of what this document is about.
-   - MAXIMUM 60 characters including spaces
-   - Focus on document type (e.g., "Credit card statement", "Medical bill")
-   - Do NOT include names, amounts, or excessive detail
-
-If you cannot determine any field with confidence, use "Unknown" for that field.
-
-Document text:
-{text[:4000]}
-
-Respond with ONLY a JSON object in this exact format:
-{{"originator": "...", "date": "...", "summary": "..."}}"""
+    # Use the new prompt system
+    prompt = get_analysis_prompt(text, model_type=model_type)
 
     try:
         response_text = call_llm(client, prompt, use_ollama, max_tokens=500)
@@ -164,6 +153,7 @@ def categorize(
     filename: str,
     categories_content: str,
     use_ollama: bool = True,
+    model_type: str = 'ollama',
     extra_category: Optional[str] = None
 ) -> Optional[str]:
     """
@@ -175,6 +165,7 @@ def categorize(
         filename: Name of the PDF file
         categories_content: Content of the categories.md file
         use_ollama: If True, use Ollama; otherwise use Anthropic
+        model_type: 'ollama' or 'anthropic' for model-specific prompts
         extra_category: Optional extra category to append to all results
 
     Returns:
@@ -187,49 +178,8 @@ def categorize(
             return "-".join(sorted([base_category, extra_category]))
         return base_category
 
-    prompt = f"""You are a document categorization system. Your task is to \
-categorize the following document based on the rules and allowed categories \
-provided.
-
-{categories_content}
-
-Document text to categorize:
-{text[:4000]}
-
-CATEGORIZATION STRATEGY:
-1. Identify the PRIMARY purpose of this document (choose ONE main category)
-2. Add 1-2 secondary categories ONLY if they are directly relevant
-3. Prefer FEWER categories over MORE categories
-4. Aim for 1-3 categories total (MAXIMUM 4 if absolutely necessary)
-
-CATEGORY SELECTION RULES:
-- "medical" - Only for medical bills, doctor visits, prescriptions, medical records
-- "banking" - Only for bank statements, checks, deposits (NOT credit cards)
-- "creditcard" - Only for actual credit card statements (NOT other invoices)
-- "insurance" - Only for insurance policies, claims, EOBs
-- "home" or location tags - Only if document is about property/residence
-- "education" - Only for school-related documents (tuition, grades, etc.)
-- Special names (lucy, mikhaila, stephanie, vincent, kahlea) - ONLY if the \
-document is specifically ABOUT or FOR that person
-
-IMPORTANT RESTRICTIONS:
-- Do NOT add "creditcard" to every invoice or bill
-- Do NOT add "education" to financial documents unless they're school-related
-- Do NOT add location tags unless the document relates to a specific property
-- Do NOT add person names unless the document is specifically for that person
-
-CRITICAL RULES:
-1. MAXIMUM 4 categories - prefer 2-3 categories
-2. NO duplicate categories - each category should appear only once
-3. NO trailing dashes - "education-" is WRONG, "education" is CORRECT
-4. Use ONLY words from the allowed categories list above
-5. If no applicable category is found, use "reviewcategory"
-6. Sort alphabetically and concatenate with '-'
-
-IMPORTANT: Respond with ONLY a single line containing the category string \
-(e.g., "banking" or "medical" or "home-sandiego").
-Do NOT include any explanation, additional text, or multiple lines. Just the \
-category string on one line."""
+    # Use the new prompt system
+    prompt = get_categorization_prompt(text, categories_content, model_type=model_type)
 
     try:
         response_text = call_llm(client, prompt, use_ollama, max_tokens=100)
@@ -356,11 +306,109 @@ def create_suggested_filename(originator: str, date_str: str, summary: str,
     return f"{date_part}T{time_part}--{description}__{category}"
 
 
+def process_document_hybrid(
+    text: str,
+    filename: str,
+    categories_content: str,
+    ollama_client: Any,
+    anthropic_client: Any,
+    extra_category: Optional[str] = None,
+    quality_threshold: float = 0.6
+) -> Dict[str, Any]:
+    """
+    Process a document using hybrid mode: Ollama first, Anthropic refinement.
+
+    Args:
+        text: Document text content
+        filename: Name of the PDF file
+        categories_content: Content of categories.md file
+        ollama_client: None (Ollama uses ollama module directly)
+        anthropic_client: Anthropic client instance
+        extra_category: Optional extra category to append
+        quality_threshold: Threshold for Anthropic refinement (0.0-1.0)
+
+    Returns:
+        Dictionary with analysis results and metadata
+    """
+    # Phase 1: Process with Ollama (fast, conservative)
+    print("  Phase 1: Ollama analysis...")
+    ollama_analysis = analyze_document(
+        ollama_client, text, filename, use_ollama=True, model_type='ollama'
+    )
+    ollama_category = categorize(
+        ollama_client, text, filename, categories_content,
+        use_ollama=True, model_type='ollama', extra_category=extra_category
+    )
+
+    if not ollama_analysis:
+        ollama_analysis = {
+            'originator': 'Unknown (no text)',
+            'date': 'Unknown',
+            'summary': 'Could not extract text from PDF'
+        }
+
+    if not ollama_category:
+        ollama_category = 'reviewcategory'
+        if extra_category:
+            ollama_category = "-".join(sorted([ollama_category, extra_category]))
+
+    # Combine Ollama results
+    ollama_result = {
+        **ollama_analysis,
+        'category': ollama_category
+    }
+
+    # Phase 2: Determine if Anthropic refinement is needed
+    needs_refinement = should_refine_with_anthropic(ollama_result, quality_threshold)
+
+    if not needs_refinement:
+        print("  ✓ High quality result, skipping Anthropic refinement")
+        return {
+            'result': ollama_result,
+            'used_anthropic': False,
+            'source': 'ollama'
+        }
+
+    # Phase 3: Refine with Anthropic
+    print("  Phase 2: Anthropic refinement needed...")
+    anthropic_analysis = analyze_document(
+        anthropic_client, text, filename, use_ollama=False, model_type='anthropic'
+    )
+    anthropic_category = categorize(
+        anthropic_client, text, filename, categories_content,
+        use_ollama=False, model_type='anthropic', extra_category=extra_category
+    )
+
+    if not anthropic_analysis:
+        anthropic_analysis = {}
+    if not anthropic_category:
+        anthropic_category = ollama_category
+
+    # Combine Anthropic results
+    anthropic_result = {
+        **anthropic_analysis,
+        'category': anthropic_category
+    } if anthropic_analysis else None
+
+    # Phase 4: Merge results (best of both)
+    final_result = merge_results(ollama_result, anthropic_result)
+
+    return {
+        'result': final_result,
+        'used_anthropic': True,
+        'source': 'hybrid',
+        'ollama_result': ollama_result,
+        'anthropic_result': anthropic_result
+    }
+
+
 def process_pdfs(
     incoming_dir: Path,
     output_csv: Path,
     use_ollama: bool = True,
-    extra_category: Optional[str] = None
+    use_hybrid: bool = False,
+    extra_category: Optional[str] = None,
+    quality_threshold: float = 0.6
 ):
     """
     Process all PDFs in the incoming directory and create a CSV summary.
@@ -369,13 +417,29 @@ def process_pdfs(
         incoming_dir: Path to directory containing PDF files
         output_csv: Path where the output CSV should be saved
         use_ollama: If True, use Ollama API; otherwise use Anthropic
+        use_hybrid: If True, use hybrid mode (Ollama + selective Anthropic)
         extra_category: Optional extra category to append to all documents
+        quality_threshold: Quality threshold for hybrid mode (0.0-1.0)
     """
-    # Initialize API client
-    client = None
-    if use_ollama:
+    # Initialize API clients
+    ollama_client = None  # Ollama uses the ollama module directly
+    anthropic_client = None
+
+    if use_hybrid:
+        print("Using HYBRID mode: Ollama + selective Anthropic refinement")
+        print(f"Quality threshold: {quality_threshold}")
+        # Need Anthropic client for hybrid mode
+        api_key = os.getenv("ANTHROPIC_API_KEY")
+        if not api_key:
+            raise ValueError(
+                "ANTHROPIC_API_KEY required for hybrid mode. "
+                "Please create a .env file with your API key."
+            )
+        anthropic_client = Anthropic(api_key=api_key)
+        model_type = 'ollama'  # Start with Ollama
+    elif use_ollama:
         print("Using Ollama API with llama3:8b model")
-        # No client needed for Ollama, it uses the ollama module directly
+        model_type = 'ollama'
     else:
         print("Using Anthropic API with Claude")
         api_key = os.getenv("ANTHROPIC_API_KEY")
@@ -384,7 +448,11 @@ def process_pdfs(
                 "ANTHROPIC_API_KEY not found in environment variables. "
                 "Please create a .env file with your API key."
             )
-        client = Anthropic(api_key=api_key)
+        anthropic_client = Anthropic(api_key=api_key)
+        model_type = 'anthropic'
+
+    # For backward compatibility
+    client = anthropic_client if not use_ollama else ollama_client
 
     # Read categories.md file
     script_dir = Path(__file__).parent
@@ -453,50 +521,64 @@ def process_pdfs(
             })
             continue
 
-        # Analyze with LLM
-        analysis = analyze_document(client, text, pdf_path.name, use_ollama)
-
-        # Categorize the document
-        category = categorize(
-            client, text, pdf_path.name, categories_content,
-            use_ollama, extra_category
-        )
-        if not category:
-            category = "reviewcategory"
-            if extra_category:
-                category = "-".join(sorted([category, extra_category]))
-
-        if analysis:
-            originator = analysis.get("originator", "Unknown")
-            date = analysis.get("date", "Unknown")
-            summary = analysis.get("summary", "Unknown")
-            suggested_filename = create_suggested_filename(
-                originator, date, summary, file_creation_time, category
+        # Process based on mode
+        if use_hybrid:
+            # Hybrid mode: Ollama + selective Anthropic refinement
+            hybrid_result = process_document_hybrid(
+                text,
+                pdf_path.name,
+                categories_content,
+                ollama_client,
+                anthropic_client,
+                extra_category,
+                quality_threshold
             )
-            results.append({
-                "filename": pdf_path.name,
-                "originator": originator,
-                "date": date,
-                "summary": summary,
-                "category": category,
-                "suggested_filename": suggested_filename
-            })
-            print(f"  ✓ {originator} - {date} - {category}")
+            result = hybrid_result['result']
+            originator = result.get("originator", "Unknown")
+            date = result.get("date", "Unknown")
+            summary = result.get("summary", "Unknown")
+            category = result.get("category", "reviewcategory")
+
+            # Show which mode was used
+            source_marker = " [Anthropic]" if hybrid_result['used_anthropic'] else " [Ollama]"
+            print(f"  ✓ {originator} - {date} - {category}{source_marker}")
         else:
-            originator = "Unknown (analysis failed)"
-            date = "Unknown"
-            summary = "Failed to analyze document"
-            suggested_filename = create_suggested_filename(
-                originator, date, summary, file_creation_time, category
+            # Single-model mode (Ollama or Anthropic)
+            analysis = analyze_document(
+                client, text, pdf_path.name, use_ollama, model_type
             )
-            results.append({
-                "filename": pdf_path.name,
-                "originator": originator,
-                "date": date,
-                "summary": summary,
-                "category": category,
-                "suggested_filename": suggested_filename
-            })
+            category = categorize(
+                client, text, pdf_path.name, categories_content,
+                use_ollama, model_type, extra_category
+            )
+
+            if not category:
+                category = "reviewcategory"
+                if extra_category:
+                    category = "-".join(sorted([category, extra_category]))
+
+            if analysis:
+                originator = analysis.get("originator", "Unknown")
+                date = analysis.get("date", "Unknown")
+                summary = analysis.get("summary", "Unknown")
+                print(f"  ✓ {originator} - {date} - {category}")
+            else:
+                originator = "Unknown (analysis failed)"
+                date = "Unknown"
+                summary = "Failed to analyze document"
+
+        # Create suggested filename and append result
+        suggested_filename = create_suggested_filename(
+            originator, date, summary, file_creation_time, category
+        )
+        results.append({
+            "filename": pdf_path.name,
+            "originator": originator,
+            "date": date,
+            "summary": summary,
+            "category": category,
+            "suggested_filename": suggested_filename
+        })
 
         print()
 
@@ -534,6 +616,17 @@ def main():
         help='Use Anthropic API with Claude'
     )
     parser.add_argument(
+        '--hybrid',
+        action='store_true',
+        help='Use hybrid mode: Ollama first, Anthropic refinement for low-quality results'
+    )
+    parser.add_argument(
+        '--threshold',
+        type=float,
+        default=0.6,
+        help='Quality threshold for hybrid mode (0.0-1.0, default: 0.6)'
+    )
+    parser.add_argument(
         '--category',
         type=str,
         default=None,
@@ -553,9 +646,9 @@ def main():
     )
     args = parser.parse_args()
 
-    # Determine which API to use
-    # If --anthropic is specified, use Anthropic; otherwise use Ollama (default)
-    use_ollama = not args.anthropic
+    # Determine which mode to use
+    use_hybrid = args.hybrid
+    use_ollama = not args.anthropic and not use_hybrid
 
     # Define paths
     script_dir = Path(__file__).parent
@@ -581,7 +674,14 @@ def main():
 
     # Process PDFs
     try:
-        process_pdfs(incoming_dir, output_csv, use_ollama, args.category)
+        process_pdfs(
+            incoming_dir,
+            output_csv,
+            use_ollama,
+            use_hybrid,
+            args.category,
+            args.threshold
+        )
     except Exception as e:
         print(f"Error: {e}")
         raise
