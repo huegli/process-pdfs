@@ -61,7 +61,7 @@ def temp_incoming_dir():
     incoming_dir.mkdir()
 
     # Copy a few PDFs from the real directory
-    real_incoming_dir = Path(__file__).parent.parent / "Sept07-Nov09-Incoming"
+    real_incoming_dir = Path(__file__).parent.parent / "Incoming"
     test_pdfs = [
         "20250907095221.pdf",
         "20250921120849.pdf",

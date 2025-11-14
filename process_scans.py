@@ -24,6 +24,7 @@ import pdfplumber
 from anthropic import Anthropic
 import ollama
 from dotenv import load_dotenv
+from tqdm import tqdm
 
 # Import new modules
 from prompts import get_analysis_prompt, get_categorization_prompt
@@ -509,8 +510,8 @@ def process_pdfs(
     # Process each PDF and collect results
     results = []
 
-    for i, pdf_path in enumerate(pdf_files, 1):
-        print(f"[{i}/{len(pdf_files)}] Processing {pdf_path.name}...")
+    for pdf_path in tqdm(pdf_files, desc="Processing PDFs", unit="file"):
+        print(f"Processing {pdf_path.name}...")
 
         # Extract timestamp from filename (format: YYYYMMDDHHMMSS.pdf)
         # If filename doesn't match pattern, fall back to file creation time
