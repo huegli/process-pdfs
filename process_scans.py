@@ -62,7 +62,12 @@ def extract_text_from_pdf(pdf_path: Path, max_pages: int = 2) -> str:
 
 
 def call_llm(
-    client: Any, prompt: str, use_ollama: bool, max_tokens: int = 500
+    client: Any,
+    prompt: str,
+    use_ollama: bool,
+    max_tokens: int = 500,
+    ollama_model: str = 'qwen2.5:7b',
+    anthropic_model: str = 'claude-3-5-haiku-20241022'
 ) -> str:
     """
     Call either Ollama or Anthropic API based on configuration.
@@ -72,19 +77,21 @@ def call_llm(
         prompt: The prompt to send to the LLM
         use_ollama: If True, use Ollama API; otherwise use Anthropic
         max_tokens: Maximum tokens for response (Anthropic only)
+        ollama_model: Ollama model to use (default: qwen2.5:7b)
+        anthropic_model: Anthropic model to use (default: claude-3-5-haiku-20241022)
 
     Returns:
         The LLM response text
     """
     if use_ollama:
         response = ollama.chat(
-            model='llama3:8b',
+            model=ollama_model,
             messages=[{'role': 'user', 'content': prompt}]
         )
         return response['message']['content']
     else:
         message = client.messages.create(
-            model="claude-3-haiku-20240307",
+            model=anthropic_model,
             max_tokens=max_tokens,
             messages=[{"role": "user", "content": prompt}]
         )
@@ -96,7 +103,9 @@ def analyze_document(
     text: str,
     filename: str,
     use_ollama: bool = True,
-    model_type: str = 'ollama'
+    model_type: str = 'ollama',
+    ollama_model: str = 'qwen2.5:7b',
+    anthropic_model: str = 'claude-3-5-haiku-20241022'
 ) -> Optional[Dict[str, str]]:
     """
     Use LLM to analyze document text and extract structured information.
@@ -107,6 +116,8 @@ def analyze_document(
         filename: Name of the PDF file
         use_ollama: If True, use Ollama; otherwise use Anthropic
         model_type: 'ollama' or 'anthropic' for model-specific prompts
+        ollama_model: Ollama model to use (default: qwen2.5:7b)
+        anthropic_model: Anthropic model to use (default: claude-3-5-haiku-20241022)
 
     Returns:
         Dictionary with originator, date, and summary, or None if analysis fails
@@ -119,7 +130,10 @@ def analyze_document(
     prompt = get_analysis_prompt(text, model_type=model_type)
 
     try:
-        response_text = call_llm(client, prompt, use_ollama, max_tokens=500)
+        response_text = call_llm(
+            client, prompt, use_ollama, max_tokens=500,
+            ollama_model=ollama_model, anthropic_model=anthropic_model
+        )
 
         # Parse JSON response
         # Handle cases where LLM might wrap JSON in markdown code blocks or add text
@@ -154,7 +168,9 @@ def categorize(
     categories_content: str,
     use_ollama: bool = True,
     model_type: str = 'ollama',
-    extra_category: Optional[str] = None
+    extra_category: Optional[str] = None,
+    ollama_model: str = 'qwen2.5:7b',
+    anthropic_model: str = 'claude-3-5-haiku-20241022'
 ) -> Optional[str]:
     """
     Use LLM to categorize document text based on allowed categories.
@@ -167,6 +183,8 @@ def categorize(
         use_ollama: If True, use Ollama; otherwise use Anthropic
         model_type: 'ollama' or 'anthropic' for model-specific prompts
         extra_category: Optional extra category to append to all results
+        ollama_model: Ollama model to use (default: qwen2.5:7b)
+        anthropic_model: Anthropic model to use (default: claude-3-5-haiku-20241022)
 
     Returns:
         Category string (e.g., "banking" or "medical")
@@ -182,7 +200,10 @@ def categorize(
     prompt = get_categorization_prompt(text, categories_content, model_type=model_type)
 
     try:
-        response_text = call_llm(client, prompt, use_ollama, max_tokens=100)
+        response_text = call_llm(
+            client, prompt, use_ollama, max_tokens=100,
+            ollama_model=ollama_model, anthropic_model=anthropic_model
+        )
 
         # Remove any potential markdown formatting or extra whitespace
         response_text = response_text.replace('`', '').strip()
@@ -313,7 +334,9 @@ def process_document_hybrid(
     ollama_client: Any,
     anthropic_client: Any,
     extra_category: Optional[str] = None,
-    quality_threshold: float = 0.6
+    quality_threshold: float = 0.6,
+    ollama_model: str = 'qwen2.5:7b',
+    anthropic_model: str = 'claude-3-5-haiku-20241022'
 ) -> Dict[str, Any]:
     """
     Process a document using hybrid mode: Ollama first, Anthropic refinement.
@@ -326,6 +349,8 @@ def process_document_hybrid(
         anthropic_client: Anthropic client instance
         extra_category: Optional extra category to append
         quality_threshold: Threshold for Anthropic refinement (0.0-1.0)
+        ollama_model: Ollama model to use (default: qwen2.5:7b)
+        anthropic_model: Anthropic model to use (default: claude-3-5-haiku-20241022)
 
     Returns:
         Dictionary with analysis results and metadata
@@ -333,11 +358,13 @@ def process_document_hybrid(
     # Phase 1: Process with Ollama (fast, conservative)
     print("  Phase 1: Ollama analysis...")
     ollama_analysis = analyze_document(
-        ollama_client, text, filename, use_ollama=True, model_type='ollama'
+        ollama_client, text, filename, use_ollama=True, model_type='ollama',
+        ollama_model=ollama_model, anthropic_model=anthropic_model
     )
     ollama_category = categorize(
         ollama_client, text, filename, categories_content,
-        use_ollama=True, model_type='ollama', extra_category=extra_category
+        use_ollama=True, model_type='ollama', extra_category=extra_category,
+        ollama_model=ollama_model, anthropic_model=anthropic_model
     )
 
     if not ollama_analysis:
@@ -372,11 +399,13 @@ def process_document_hybrid(
     # Phase 3: Refine with Anthropic
     print("  Phase 2: Anthropic refinement needed...")
     anthropic_analysis = analyze_document(
-        anthropic_client, text, filename, use_ollama=False, model_type='anthropic'
+        anthropic_client, text, filename, use_ollama=False, model_type='anthropic',
+        ollama_model=ollama_model, anthropic_model=anthropic_model
     )
     anthropic_category = categorize(
         anthropic_client, text, filename, categories_content,
-        use_ollama=False, model_type='anthropic', extra_category=extra_category
+        use_ollama=False, model_type='anthropic', extra_category=extra_category,
+        ollama_model=ollama_model, anthropic_model=anthropic_model
     )
 
     if not anthropic_analysis:
@@ -408,7 +437,9 @@ def process_pdfs(
     use_ollama: bool = True,
     use_hybrid: bool = False,
     extra_category: Optional[str] = None,
-    quality_threshold: float = 0.6
+    quality_threshold: float = 0.6,
+    ollama_model: str = 'qwen2.5:7b',
+    anthropic_model: str = 'claude-3-5-haiku-20241022'
 ):
     """
     Process all PDFs in the incoming directory and create a CSV summary.
@@ -420,13 +451,15 @@ def process_pdfs(
         use_hybrid: If True, use hybrid mode (Ollama + selective Anthropic)
         extra_category: Optional extra category to append to all documents
         quality_threshold: Quality threshold for hybrid mode (0.0-1.0)
+        ollama_model: Ollama model to use (default: qwen2.5:7b)
+        anthropic_model: Anthropic model to use (default: claude-3-5-haiku-20241022)
     """
     # Initialize API clients
     ollama_client = None  # Ollama uses the ollama module directly
     anthropic_client = None
 
     if use_hybrid:
-        print("Using HYBRID mode: Ollama + selective Anthropic refinement")
+        print(f"Using HYBRID mode: {ollama_model} + selective {anthropic_model} refinement")
         print(f"Quality threshold: {quality_threshold}")
         # Need Anthropic client for hybrid mode
         api_key = os.getenv("ANTHROPIC_API_KEY")
@@ -438,10 +471,10 @@ def process_pdfs(
         anthropic_client = Anthropic(api_key=api_key)
         model_type = 'ollama'  # Start with Ollama
     elif use_ollama:
-        print("Using Ollama API with llama3:8b model")
+        print(f"Using Ollama API with {ollama_model} model")
         model_type = 'ollama'
     else:
-        print("Using Anthropic API with Claude")
+        print(f"Using Anthropic API with {anthropic_model}")
         api_key = os.getenv("ANTHROPIC_API_KEY")
         if not api_key:
             raise ValueError(
@@ -531,7 +564,9 @@ def process_pdfs(
                 ollama_client,
                 anthropic_client,
                 extra_category,
-                quality_threshold
+                quality_threshold,
+                ollama_model,
+                anthropic_model
             )
             result = hybrid_result['result']
             originator = result.get("originator", "Unknown")
@@ -545,11 +580,13 @@ def process_pdfs(
         else:
             # Single-model mode (Ollama or Anthropic)
             analysis = analyze_document(
-                client, text, pdf_path.name, use_ollama, model_type
+                client, text, pdf_path.name, use_ollama, model_type,
+                ollama_model, anthropic_model
             )
             category = categorize(
                 client, text, pdf_path.name, categories_content,
-                use_ollama, model_type, extra_category
+                use_ollama, model_type, extra_category,
+                ollama_model, anthropic_model
             )
 
             if not category:
@@ -608,12 +645,24 @@ def main():
     parser.add_argument(
         '--local',
         action='store_true',
-        help='Use local Ollama API with llama3:8b model (default)'
+        help='Use local Ollama API with qwen2.5:7b model (default)'
     )
     parser.add_argument(
         '--anthropic',
         action='store_true',
-        help='Use Anthropic API with Claude'
+        help='Use Anthropic API with Claude 3.5 Haiku'
+    )
+    parser.add_argument(
+        '--ollama-model',
+        type=str,
+        default='qwen2.5:7b',
+        help='Ollama model to use (default: qwen2.5:7b)'
+    )
+    parser.add_argument(
+        '--anthropic-model',
+        type=str,
+        default='claude-3-5-haiku-20241022',
+        help='Anthropic model to use (default: claude-3-5-haiku-20241022)'
     )
     parser.add_argument(
         '--hybrid',
@@ -680,7 +729,9 @@ def main():
             use_ollama,
             use_hybrid,
             args.category,
-            args.threshold
+            args.threshold,
+            args.ollama_model,
+            args.anthropic_model
         )
     except Exception as e:
         print(f"Error: {e}")
