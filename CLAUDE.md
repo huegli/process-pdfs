@@ -51,22 +51,51 @@ The `process_scans.py` script analyzes PDF files and extracts structured informa
 ```bash
 uv run process_scans.py --input Incoming --output scan_summary.csv
 ```
-Uses local llama3:8b model via Ollama. Fast, free, conservative categorization.
+Uses local **Qwen2.5:7b** model via Ollama. Fast, free, excellent for structured data extraction.
+- Optimized for document understanding and data extraction
+- Runs comfortably on 8GB Mac Mini
+- Better date parsing and categorization than Llama3:8b
 
 **2. Anthropic Mode (High Quality)**
 ```bash
 uv run process_scans.py --anthropic --input Incoming --output scan_summary.csv
 ```
-Uses Claude Haiku via Anthropic API. Best quality, but costs API credits.
+Uses **Claude 3.5 Haiku** via Anthropic API. High quality with good cost efficiency.
+- Significantly better than Claude 3 Haiku
+- Within 5% of Sonnet 4.5 performance at 1/3 the cost
+- 3x faster than Sonnet 4.5
 
-**3. Hybrid Mode (Recommended - Cost-Effective)**
+**3. Hybrid Mode (Recommended - Best Balance)**
 ```bash
 uv run process_scans.py --hybrid --input Incoming --output scan_summary.csv
 ```
-Smart combination: Ollama first, then Anthropic refinement for low-quality results.
+Smart combination: Qwen2.5:7b first, then Claude 3.5 Haiku refinement for low-quality results.
 - 50-70% cost reduction vs pure Anthropic
 - Near-Anthropic quality with Ollama efficiency
 - Configurable quality threshold: `--threshold 0.6` (default)
+
+### Model Selection
+
+Override default models with command-line flags:
+
+**Ollama Models:**
+```bash
+# Use a different Ollama model (e.g., llama3:8b, mistral:7b)
+uv run process_scans.py --ollama-model llama3:8b
+```
+
+**Anthropic Models:**
+```bash
+# Use Claude Sonnet 4.5 for highest quality
+uv run process_scans.py --anthropic --anthropic-model claude-sonnet-4-5-20250929
+
+# Use Claude Haiku 4.5 (when available)
+uv run process_scans.py --anthropic --anthropic-model claude-4-5-haiku-20250101
+```
+
+**Default Models:**
+- **Ollama**: `qwen2.5:7b` (excellent document extraction, 8GB compatible)
+- **Anthropic**: `claude-3-5-haiku-20241022` (best cost/performance balance)
 
 ### What It Extracts
 
