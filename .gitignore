@@ -40,3 +40,6 @@ env/
 
 scan_summary.csv
 *-Incoming/
+# CSV output files
+*.csv
+

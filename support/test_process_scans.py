@@ -6,16 +6,21 @@ These tests use mocked LLM calls with test data from test_data.json
 to verify the script's functionality without making actual API calls.
 """
 
-import pytest
-import json
-import csv
+import sys
 from pathlib import Path
-from datetime import datetime
-from unittest.mock import Mock, patch
-import tempfile
-import shutil
 
-from process_scans import (
+# Add parent directory to path to import process_scans
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+import pytest  # noqa: E402
+import json  # noqa: E402
+import csv  # noqa: E402
+from datetime import datetime  # noqa: E402
+from unittest.mock import Mock, patch  # noqa: E402
+import tempfile  # noqa: E402
+import shutil  # noqa: E402
+
+from process_scans import (  # noqa: E402
     extract_text_from_pdf,
     analyze_document,
     categorize,
@@ -29,7 +34,7 @@ from process_scans import (
 @pytest.fixture
 def test_data():
     """Load test data from test_data.json"""
-    test_data_file = Path(__file__).parent / "test_data.json"
+    test_data_file = Path(__file__).parent.parent / "test_data.json"
     with open(test_data_file, 'r', encoding='utf-8') as f:
         return json.load(f)
 
@@ -43,7 +48,7 @@ def mock_anthropic_client():
 @pytest.fixture
 def categories_content():
     """Load categories.md content"""
-    categories_file = Path(__file__).parent / "categories.md"
+    categories_file = Path(__file__).parent.parent / "categories.md"
     with open(categories_file, 'r', encoding='utf-8') as f:
         return f.read()
 
@@ -56,7 +61,7 @@ def temp_incoming_dir():
     incoming_dir.mkdir()
 
     # Copy a few PDFs from the real directory
-    real_incoming_dir = Path(__file__).parent / "Sept07-Nov09-Incoming"
+    real_incoming_dir = Path(__file__).parent.parent / "Sept07-Nov09-Incoming"
     test_pdfs = [
         "20250907095221.pdf",
         "20250921120849.pdf",
@@ -283,7 +288,7 @@ class TestExtractTextFromPDF:
 
     def test_extract_from_real_pdf(self):
         """Test extraction from a real PDF file"""
-        pdf_path = Path(__file__).parent / "Sept07-Nov09-Incoming" / "20250907095221.pdf"
+        pdf_path = Path(__file__).parent.parent / "Sept07-Nov09-Incoming" / "20250907095221.pdf"
         if pdf_path.exists():
             text = extract_text_from_pdf(pdf_path, max_pages=1)
             assert len(text) > 0

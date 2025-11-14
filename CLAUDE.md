@@ -8,11 +8,21 @@ This is a ScanSnap document processing system. The repository manages scanned PD
 
 ## Repository Structure
 
-- **Incoming folders**: Named with date ranges (e.g., `Sept07-Nov09-Incoming/`) contain scanned PDF documents
-- **PDF naming**: Files are named with scan timestamps in format `YYYYMMDDHHMMSS.pdf`
-- The repository is configured with two working directories:
-  - Primary: `/Users/nikolai/Library/CloudStorage/Dropbox/Source/Claude/ScanSnap`
-  - Secondary: `/Users/nikolai/Source/Scratch/Claude/ScanSnap`
+### Core Files
+- **process_scans.py**: Main processing script with hybrid mode support
+- **prompts.py**: Model-specific LLM prompt templates
+- **quality_validators.py**: Quality scoring and result merging logic
+- **categories.md**: Allowed category list and categorization rules
+- **CLAUDE.md**: This file - project documentation
+
+### Directories
+- **Incoming/**: PDF files to be processed
+- **support/**: Helper scripts (tests, comparisons, utilities)
+- **Claude-DOC/**: Documentation files (strategy, summaries, analysis)
+
+### PDF Naming Convention
+- Files are named with scan timestamps: `YYYYMMDDHHMMSS.pdf`
+- Some files use descriptive names: `CompanyName_Date_Description.pdf`
 
 ## Setup - DONE
 
@@ -33,35 +43,57 @@ This is a ScanSnap document processing system. The repository manages scanned PD
 
 ## Processing Scanned Documents
 
-The `process_scans.py` script analyzes PDF files and extracts structured information using Claude AI.
+The `process_scans.py` script analyzes PDF files and extracts structured information using LLM APIs.
 
-**Run the script:**
+### Processing Modes
+
+**1. Ollama Mode (Default - Free, Local)**
 ```bash
-uv run process_scans.py
+uv run process_scans.py --input Incoming --output scan_summary.csv
 ```
+Uses local llama3:8b model via Ollama. Fast, free, conservative categorization.
 
-This will:
-- Read all PDFs from `Sept07-Nov09-Incoming/`
-- Extract text from the first 2 pages of each document
-- Use Claude API to identify:
-  - **Originator**: Company/organization that created the document
-  - **Date**: The document date (not the scan date)
-  - **Summary**: One-sentence description of the content
-- Save results to `scan_summary.csv`
+**2. Anthropic Mode (High Quality)**
+```bash
+uv run process_scans.py --anthropic --input Incoming --output scan_summary.csv
+```
+Uses Claude Haiku via Anthropic API. Best quality, but costs API credits.
+
+**3. Hybrid Mode (Recommended - Cost-Effective)**
+```bash
+uv run process_scans.py --hybrid --input Incoming --output scan_summary.csv
+```
+Smart combination: Ollama first, then Anthropic refinement for low-quality results.
+- 50-70% cost reduction vs pure Anthropic
+- Near-Anthropic quality with Ollama efficiency
+- Configurable quality threshold: `--threshold 0.6` (default)
+
+### What It Extracts
+
+For each PDF document:
+- **Originator**: Company/organization that created the document
+- **Date**: The document date (not the scan date) in YYYY-MM-DD format
+- **Summary**: Concise description (max 60 characters)
+- **Category**: 1-4 categories from `categories.md` (e.g., "banking-home-sandiego")
+- **Suggested Filename**: YYYYMMDDTHHMMSS--description__category format
 
 **Output CSV format:**
-- `filename`: PDF filename
+- `filename`: Original PDF filename
 - `originator`: Company or organization name
-- `date`: Document date in YYYY-MM-DD format (when possible)
-- `summary`: One-sentence summary
+- `date`: Document date
+- `summary`: Brief description
+- `category`: Categories (dash-separated, sorted)
+- `suggested_filename`: Recommended new filename
 
-## Linting, Testing and Revision control
+## Linting, Testing and Revision Control
 
-Each time you make a change, run the following
+Each time you make a change, run the following:
 
-```
+```bash
 uv run flake8
-uv run pytest test_process_scans.py
+uv run pytest support/test_process_scans.py
 ```
 
-<IF> and only if there are no lint or test issues, check in all changes with a meaningful commit message
+**IMPORTANT**: Only commit changes if there are no lint or test issues. All commits should have meaningful commit messages.
+
+**Note**: CSV output files (*.csv) are gitignored and should never be committed.
