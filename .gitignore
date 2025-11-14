@@ -39,7 +39,7 @@ env/
 .DS_Store
 
 scan_summary.csv
-*-Incoming/
+Incoming/
 # CSV output files
 *.csv
 
