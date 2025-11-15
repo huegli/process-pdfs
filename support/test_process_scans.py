@@ -1,26 +1,21 @@
 #!/usr/bin/env python3
 """
-Unit tests for process_scans.py
+Unit tests for process_pdfs package
 
 These tests use mocked LLM calls with test data from test_data.json
-to verify the script's functionality without making actual API calls.
+to verify the package's functionality without making actual API calls.
 """
 
-import sys
+import pytest
+import json
+import csv
 from pathlib import Path
+from datetime import datetime
+from unittest.mock import Mock, patch
+import tempfile
+import shutil
 
-# Add parent directory to path to import process_scans
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-import pytest  # noqa: E402
-import json  # noqa: E402
-import csv  # noqa: E402
-from datetime import datetime  # noqa: E402
-from unittest.mock import Mock, patch  # noqa: E402
-import tempfile  # noqa: E402
-import shutil  # noqa: E402
-
-from process_scans import (  # noqa: E402
+from process_pdfs import (
     extract_text_from_pdf,
     analyze_document,
     categorize,
@@ -48,7 +43,7 @@ def mock_anthropic_client():
 @pytest.fixture
 def categories_content():
     """Load categories.md content"""
-    categories_file = Path(__file__).parent.parent / "categories.md"
+    categories_file = Path(__file__).parent.parent / "src" / "process_pdfs" / "categories.md"
     with open(categories_file, 'r', encoding='utf-8') as f:
         return f.read()
 
@@ -320,8 +315,8 @@ class TestProcessPDFsIntegration:
 class TestProcessPDFsWithTestData:
     """Tests using the test_data.json fixture to simulate LLM responses"""
 
-    @patch('process_scans.analyze_document')
-    @patch('process_scans.categorize')
+    @patch('process_pdfs.cli.analyze_document')
+    @patch('process_pdfs.cli.categorize')
     def test_process_single_pdf_with_test_data(
         self, mock_categorize, mock_analyze, temp_incoming_dir, test_data
     ):
@@ -362,8 +357,8 @@ class TestProcessPDFsWithTestData:
         output_csv = temp_incoming_dir.parent / "test_output.csv"
 
         # Mock the Anthropic initialization
-        with patch('process_scans.Anthropic'), \
-             patch('process_scans.os.getenv', return_value='fake-api-key'):
+        with patch('process_pdfs.cli.Anthropic'), \
+             patch('process_pdfs.cli.os.getenv', return_value='fake-api-key'):
 
             # Process the PDFs
             process_pdfs(temp_incoming_dir, output_csv)

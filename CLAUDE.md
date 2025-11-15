@@ -17,10 +17,6 @@ This is a ScanSnap document processing system. The repository manages scanned PD
   - **__init__.py**: Package initialization
   - **__main__.py**: CLI entry point
 
-### Legacy Files (for reference)
-- **process_scans.py**: Original script (replaced by package)
-- **prompts.py**, **quality_validators.py**, **categories.md**: Root-level copies
-
 ### Directories
 - **Incoming/**: PDF files to be processed
 - **support/**: Helper scripts (tests, comparisons, utilities)
@@ -45,17 +41,13 @@ This makes the `process-pdfs` command available system-wide.
 
 ### Option 2: Development Installation
 
-For local development with the original scripts:
+For local development:
 
-1. Set up a virtual environment:
-   ```bash
-   uv venv
-   ```
+```bash
+uv pip install -e ".[dev]"
+```
 
-2. Install dependencies:
-   ```bash
-   uv pip install -e ".[dev]"
-   ```
+This installs the package in editable mode with development dependencies (pytest, flake8).
 
 ### Configuration
 
@@ -68,14 +60,13 @@ cp .env.example .env
 
 ## Processing Scanned Documents
 
-The `process-pdfs` command (or `uv run process_scans.py` for legacy usage) analyzes PDF files and extracts structured information using LLM APIs.
+The `process-pdfs` command analyzes PDF files and extracts structured information using LLM APIs.
 
 ### Processing Modes
 
 **1. Ollama Mode (Default - Free, Local)**
 ```bash
 process-pdfs --input Incoming --output scan_summary.csv
-# Or legacy: uv run process_scans.py --input Incoming --output scan_summary.csv
 ```
 Uses local **Qwen2.5:7b** model via Ollama. Fast, free, excellent for structured data extraction.
 - Optimized for document understanding and data extraction
@@ -153,7 +144,17 @@ For each PDF document:
 - `category`: Categories (dash-separated, sorted)
 - `suggested_filename`: Recommended new filename
 
-## Linting, Testing and Revision Control
+## Development
+
+### Building the Package
+
+```bash
+uv build
+```
+
+This creates both a wheel and source distribution in `dist/`.
+
+### Linting and Testing
 
 Each time you make a change, run the following:
 
@@ -163,5 +164,15 @@ uv run pytest support/test_process_scans.py
 ```
 
 **IMPORTANT**: Only commit changes if there are no lint or test issues. All commits should have meaningful commit messages.
+
+### Installing for Testing
+
+```bash
+# Install in editable mode for development
+uv pip install -e ".[dev]"
+
+# Or install as a tool from local directory
+uv tool install --force .
+```
 
 **Note**: CSV output files (*.csv) are gitignored and should never be committed.
