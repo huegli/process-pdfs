@@ -60,19 +60,29 @@ Uses local **Qwen2.5:7b** model via Ollama. Fast, free, excellent for structured
 ```bash
 uv run process_scans.py --anthropic --input Incoming --output scan_summary.csv
 ```
-Uses **Claude 3.5 Haiku** via Anthropic API. High quality with good cost efficiency.
-- Significantly better than Claude 3 Haiku
-- Within 5% of Sonnet 4.5 performance at 1/3 the cost
-- 3x faster than Sonnet 4.5
+Uses **Claude Sonnet 4.5** via Anthropic API. Highest quality document extraction.
+- Best-in-class for complex document understanding
+- Superior accuracy for ambiguous or poorly-scanned documents
+- $3 input / $15 output per million tokens
+
+**2a. Anthropic Mode - Low Cost**
+```bash
+uv run process_scans.py --anthropic --lowcost --input Incoming --output scan_summary.csv
+```
+Uses **Claude Haiku 4.5** via Anthropic API. Near-frontier performance at lower cost.
+- Matches Sonnet 4 quality on many tasks
+- 3x cheaper than Sonnet 4.5 ($1 input / $5 output per million tokens)
+- 2x faster than Sonnet 4.5
 
 **3. Hybrid Mode (Recommended - Best Balance)**
 ```bash
 uv run process_scans.py --hybrid --input Incoming --output scan_summary.csv
 ```
-Smart combination: Qwen2.5:7b first, then Claude 3.5 Haiku refinement for low-quality results.
+Smart combination: Qwen2.5:7b first, then Claude Sonnet 4.5 refinement for low-quality results.
 - 50-70% cost reduction vs pure Anthropic
 - Near-Anthropic quality with Ollama efficiency
 - Configurable quality threshold: `--threshold 0.6` (default)
+- Use `--lowcost` to refine with Haiku 4.5 instead of Sonnet 4.5
 
 ### Model Selection
 
@@ -86,16 +96,19 @@ uv run process_scans.py --ollama-model llama3:8b
 
 **Anthropic Models:**
 ```bash
-# Use Claude Sonnet 4.5 for highest quality
+# Use Claude Sonnet 4.5 (default for --anthropic)
 uv run process_scans.py --anthropic --anthropic-model claude-sonnet-4-5-20250929
 
-# Use Claude Haiku 4.5 (when available)
-uv run process_scans.py --anthropic --anthropic-model claude-4-5-haiku-20250101
+# Use Claude Haiku 4.5 (lower cost option)
+uv run process_scans.py --anthropic --lowcost
+# or explicitly:
+uv run process_scans.py --anthropic --anthropic-model claude-haiku-4-5-20251001
 ```
 
 **Default Models:**
 - **Ollama**: `qwen2.5:7b` (excellent document extraction, 8GB compatible)
-- **Anthropic**: `claude-3-5-haiku-20241022` (best cost/performance balance)
+- **Anthropic**: `claude-sonnet-4-5-20250929` (highest quality, default)
+- **Anthropic (--lowcost)**: `claude-haiku-4-5-20251001` (3x cheaper, near-frontier performance)
 
 ### What It Extracts
 

@@ -69,7 +69,7 @@ def call_llm(
     use_ollama: bool,
     max_tokens: int = 500,
     ollama_model: str = 'qwen2.5:7b',
-    anthropic_model: str = 'claude-3-5-haiku-20241022'
+    anthropic_model: str = 'claude-sonnet-4-5-20250929'
 ) -> str:
     """
     Call either Ollama or Anthropic API based on configuration.
@@ -80,7 +80,7 @@ def call_llm(
         use_ollama: If True, use Ollama API; otherwise use Anthropic
         max_tokens: Maximum tokens for response (Anthropic only)
         ollama_model: Ollama model to use (default: qwen2.5:7b)
-        anthropic_model: Anthropic model to use (default: claude-3-5-haiku-20241022)
+        anthropic_model: Anthropic model to use (default: claude-sonnet-4-5-20250929)
 
     Returns:
         The LLM response text
@@ -107,7 +107,7 @@ def analyze_document(
     use_ollama: bool = True,
     model_type: str = 'ollama',
     ollama_model: str = 'qwen2.5:7b',
-    anthropic_model: str = 'claude-3-5-haiku-20241022'
+    anthropic_model: str = 'claude-sonnet-4-5-20250929'
 ) -> Optional[Dict[str, str]]:
     """
     Use LLM to analyze document text and extract structured information.
@@ -119,7 +119,7 @@ def analyze_document(
         use_ollama: If True, use Ollama; otherwise use Anthropic
         model_type: 'ollama' or 'anthropic' for model-specific prompts
         ollama_model: Ollama model to use (default: qwen2.5:7b)
-        anthropic_model: Anthropic model to use (default: claude-3-5-haiku-20241022)
+        anthropic_model: Anthropic model to use (default: claude-sonnet-4-5-20250929)
 
     Returns:
         Dictionary with originator, date, and summary, or None if analysis fails
@@ -172,7 +172,7 @@ def categorize(
     model_type: str = 'ollama',
     extra_category: Optional[str] = None,
     ollama_model: str = 'qwen2.5:7b',
-    anthropic_model: str = 'claude-3-5-haiku-20241022'
+    anthropic_model: str = 'claude-sonnet-4-5-20250929'
 ) -> Optional[str]:
     """
     Use LLM to categorize document text based on allowed categories.
@@ -186,7 +186,7 @@ def categorize(
         model_type: 'ollama' or 'anthropic' for model-specific prompts
         extra_category: Optional extra category to append to all results
         ollama_model: Ollama model to use (default: qwen2.5:7b)
-        anthropic_model: Anthropic model to use (default: claude-3-5-haiku-20241022)
+        anthropic_model: Anthropic model to use (default: claude-sonnet-4-5-20250929)
 
     Returns:
         Category string (e.g., "banking" or "medical")
@@ -338,7 +338,7 @@ def process_document_hybrid(
     extra_category: Optional[str] = None,
     quality_threshold: float = 0.6,
     ollama_model: str = 'qwen2.5:7b',
-    anthropic_model: str = 'claude-3-5-haiku-20241022'
+    anthropic_model: str = 'claude-sonnet-4-5-20250929'
 ) -> Dict[str, Any]:
     """
     Process a document using hybrid mode: Ollama first, Anthropic refinement.
@@ -352,7 +352,7 @@ def process_document_hybrid(
         extra_category: Optional extra category to append
         quality_threshold: Threshold for Anthropic refinement (0.0-1.0)
         ollama_model: Ollama model to use (default: qwen2.5:7b)
-        anthropic_model: Anthropic model to use (default: claude-3-5-haiku-20241022)
+        anthropic_model: Anthropic model to use (default: claude-sonnet-4-5-20250929)
 
     Returns:
         Dictionary with analysis results and metadata
@@ -441,7 +441,7 @@ def process_pdfs(
     extra_category: Optional[str] = None,
     quality_threshold: float = 0.6,
     ollama_model: str = 'qwen2.5:7b',
-    anthropic_model: str = 'claude-3-5-haiku-20241022'
+    anthropic_model: str = 'claude-sonnet-4-5-20250929'
 ):
     """
     Process all PDFs in the incoming directory and create a CSV summary.
@@ -454,7 +454,7 @@ def process_pdfs(
         extra_category: Optional extra category to append to all documents
         quality_threshold: Quality threshold for hybrid mode (0.0-1.0)
         ollama_model: Ollama model to use (default: qwen2.5:7b)
-        anthropic_model: Anthropic model to use (default: claude-3-5-haiku-20241022)
+        anthropic_model: Anthropic model to use (default: claude-sonnet-4-5-20250929)
     """
     # Initialize API clients
     ollama_client = None  # Ollama uses the ollama module directly
@@ -476,7 +476,11 @@ def process_pdfs(
         print(f"Using Ollama API with {ollama_model} model")
         model_type = 'ollama'
     else:
-        print(f"Using Anthropic API with {anthropic_model}")
+        if "sonnet" in anthropic_model.lower():
+            model_name = "Claude Sonnet 4.5"
+        else:
+            model_name = "Claude Haiku 4.5"
+        print(f"Using Anthropic API with {model_name} ({anthropic_model})")
         api_key = os.getenv("ANTHROPIC_API_KEY")
         if not api_key:
             raise ValueError(
@@ -766,7 +770,7 @@ def main():
     parser.add_argument(
         '--anthropic',
         action='store_true',
-        help='Use Anthropic API with Claude 3.5 Haiku'
+        help='Use Anthropic API with Claude Sonnet 4.5'
     )
     parser.add_argument(
         '--ollama-model',
@@ -777,8 +781,13 @@ def main():
     parser.add_argument(
         '--anthropic-model',
         type=str,
-        default='claude-3-5-haiku-20241022',
-        help='Anthropic model to use (default: claude-3-5-haiku-20241022)'
+        default='claude-sonnet-4-5-20250929',
+        help='Anthropic model to use (default: claude-sonnet-4-5-20250929)'
+    )
+    parser.add_argument(
+        '--lowcost',
+        action='store_true',
+        help='Use Claude Haiku 4.5 instead of Sonnet 4.5 (lower cost, slightly reduced quality)'
     )
     parser.add_argument(
         '--hybrid',
@@ -812,6 +821,12 @@ def main():
              'or output directory for rename/script mode (optional)'
     )
     args = parser.parse_args()
+
+    # Handle --lowcost flag: override anthropic_model if specified
+    if args.lowcost:
+        # Override to use Haiku 4.5 unless user explicitly specified a different model
+        if args.anthropic_model == 'claude-sonnet-4-5-20250929':
+            args.anthropic_model = 'claude-haiku-4-5-20251001'
 
     # Determine which mode to use
     use_hybrid = args.hybrid
