@@ -17,8 +17,9 @@ import csv
 import json
 import re
 import argparse
+import shutil
 from pathlib import Path
-from typing import Dict, Optional, Any
+from typing import Dict, Optional, Any, List
 from datetime import datetime
 import pdfplumber
 from anthropic import Anthropic
@@ -636,12 +637,126 @@ def process_pdfs(
     print(f"✓ Results saved to {output_csv}")
 
 
+def create_rename_script(
+    results: List[Dict[str, str]],
+    incoming_dir: Path,
+    output_script: Path,
+    output_dir: Optional[Path] = None
+):
+    """
+    Create a bash script to rename PDFs based on suggested filenames.
+
+    Args:
+        results: List of processing results with filename and suggested_filename
+        incoming_dir: Directory containing the original PDF files
+        output_script: Path where the bash script should be saved
+        output_dir: Optional directory to copy renamed files to (instead of in-place rename)
+    """
+    script_lines = ["#!/bin/bash", ""]
+
+    for result in results:
+        original_filename = result['filename']
+        suggested_filename = result['suggested_filename']
+
+        # Add .pdf extension if not present
+        if not suggested_filename.endswith('.pdf'):
+            suggested_filename += '.pdf'
+
+        original_path = incoming_dir / original_filename
+
+        if output_dir:
+            # Copy to output directory with new name
+            new_path = output_dir / suggested_filename
+            script_lines.append(f'cp "{original_path}" "{new_path}"')
+        else:
+            # Rename in place
+            new_path = incoming_dir / suggested_filename
+            script_lines.append(f'mv "{original_path}" "{new_path}"')
+
+        # Open files that need review
+        if 'review' in suggested_filename.lower():
+            script_lines.append(f'open "{new_path}"')
+
+        script_lines.append('')
+
+    # Write the script
+    with open(output_script, 'w', encoding='utf-8') as f:
+        f.write('\n'.join(script_lines))
+
+    # Make script executable
+    os.chmod(output_script, 0o755)
+
+    print(f"✓ Rename script saved to {output_script}")
+    print(f"  Run with: {output_script}")
+
+
+def rename_files_directly(
+    results: List[Dict[str, str]],
+    incoming_dir: Path,
+    output_dir: Optional[Path] = None
+):
+    """
+    Directly rename PDFs based on suggested filenames.
+
+    Args:
+        results: List of processing results with filename and suggested_filename
+        incoming_dir: Directory containing the original PDF files
+        output_dir: Optional directory to copy renamed files to (instead of in-place rename)
+    """
+    files_to_open = []
+
+    for result in results:
+        original_filename = result['filename']
+        suggested_filename = result['suggested_filename']
+
+        # Add .pdf extension if not present
+        if not suggested_filename.endswith('.pdf'):
+            suggested_filename += '.pdf'
+
+        original_path = incoming_dir / original_filename
+
+        if not original_path.exists():
+            print(f"  ⚠ Warning: {original_filename} not found, skipping")
+            continue
+
+        if output_dir:
+            # Copy to output directory with new name
+            new_path = output_dir / suggested_filename
+            shutil.copy2(original_path, new_path)
+            print(f"  ✓ Copied {original_filename} -> {new_path}")
+        else:
+            # Rename in place
+            new_path = incoming_dir / suggested_filename
+            original_path.rename(new_path)
+            print(f"  ✓ Renamed {original_filename} -> {suggested_filename}")
+
+        # Track files that need review to open later
+        if 'review' in suggested_filename.lower():
+            files_to_open.append(new_path)
+
+    # Open files that need review
+    if files_to_open:
+        print(f"\nOpening {len(files_to_open)} file(s) for review...")
+        for file_path in files_to_open:
+            os.system(f'open "{file_path}"')
+
+    print(f"\n✓ Successfully renamed {len(results)} files")
+
+
 def main():
     """Main entry point for the script."""
     # Parse command line arguments
     parser = argparse.ArgumentParser(
         description="Process scanned PDF files and extract structured "
                     "information using LLM API."
+    )
+    parser.add_argument(
+        'mode',
+        nargs='?',
+        choices=['csv', 'script', 'rename'],
+        default='csv',
+        help='Operation mode: csv (create CSV, default), script (create rename script), '
+             'rename (rename files directly)'
     )
     parser.add_argument(
         '--local',
@@ -691,8 +806,10 @@ def main():
     parser.add_argument(
         '--output',
         type=str,
-        default='scan_summary.csv',
-        help='Output CSV filename (default: scan_summary.csv)'
+        default=None,
+        help='Output destination: CSV filename for csv mode (default: scan_summary.csv), '
+             'script filename for script mode (default: rename_pdfs.sh), '
+             'or output directory for rename/script mode (optional)'
     )
     args = parser.parse_args()
 
@@ -710,17 +827,49 @@ def main():
     else:
         incoming_dir = script_dir / args.input
 
-    # Handle output file - can be absolute or relative to script directory
-    output_path = Path(args.output)
-    if output_path.is_absolute():
-        output_csv = output_path
+    # Determine output path based on mode
+    mode = args.mode
+    output_dir = None
+
+    if args.output:
+        output_path = Path(args.output)
+        if output_path.is_absolute():
+            output_destination = output_path
+        else:
+            output_destination = script_dir / args.output
     else:
-        output_csv = script_dir / args.output
+        # Set defaults based on mode
+        if mode == 'csv':
+            output_destination = script_dir / 'scan_summary.csv'
+        elif mode == 'script':
+            output_destination = script_dir / 'rename_pdfs.sh'
+        else:  # rename mode
+            output_destination = None  # Rename in place
+
+    # If output_destination is a directory (for rename/script mode), set output_dir
+    if output_destination and output_destination.is_dir():
+        output_dir = output_destination
+        if mode == 'script':
+            output_destination = script_dir / 'rename_pdfs.sh'
+        else:
+            output_destination = None  # For rename mode, we'll use output_dir
+
+    # For csv mode, we always need a CSV file path
+    if mode == 'csv':
+        output_csv = output_destination
+    else:
+        # For script/rename modes, create a temporary CSV to collect results
+        output_csv = script_dir / '.temp_scan_summary.csv'
 
     # Verify incoming directory exists
     if not incoming_dir.exists():
         print(f"Error: Directory not found: {incoming_dir}")
         return 1
+
+    # Create output directory if needed
+    if output_dir and not output_dir.exists():
+        output_dir.mkdir(parents=True, exist_ok=True)
+        print(f"Created output directory: {output_dir}")
 
     # Process PDFs
     try:
@@ -734,8 +883,34 @@ def main():
             args.ollama_model,
             args.anthropic_model
         )
+
+        # Handle post-processing based on mode
+        if mode in ['script', 'rename']:
+            # Read the results from the CSV
+            with open(output_csv, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                results = list(reader)
+
+            if mode == 'script':
+                # Create rename script
+                create_rename_script(results, incoming_dir, output_destination, output_dir)
+            else:  # rename
+                # Rename files directly
+                print("\nRenaming files...")
+                rename_files_directly(results, incoming_dir, output_dir)
+
+            # Clean up temporary CSV
+            if output_csv.name == '.temp_scan_summary.csv':
+                output_csv.unlink()
+
     except Exception as e:
         print(f"Error: {e}")
+        # Clean up temporary CSV on error
+        is_temp_csv = (mode in ['script', 'rename'] and
+                       output_csv.exists() and
+                       output_csv.name == '.temp_scan_summary.csv')
+        if is_temp_csv:
+            output_csv.unlink()
         raise
 
 
