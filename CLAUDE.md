@@ -165,14 +165,17 @@ uv run pytest support/test_process_scans.py
 
 **IMPORTANT**: Only commit changes if there are no lint or test issues. All commits should have meaningful commit messages.
 
+
 ### Installing for Testing
 
 ```bash
 # Install in editable mode for development
 uv pip install -e ".[dev]"
-
-# Or install as a tool from local directory
-uv tool install --force .
 ```
 
 **Note**: CSV output files (*.csv) are gitignored and should never be committed.
+
+### Package creation and versions
+
+When doing local development, do NOT update the package and package version unless I explicitly say so
+
