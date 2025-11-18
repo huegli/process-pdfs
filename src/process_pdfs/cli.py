@@ -167,7 +167,8 @@ def categorize(
     client: Any,
     text: str,
     filename: str,
-    categories_content: str,
+    category_rules: str,
+    allowed_categories: str,
     use_ollama: bool = True,
     model_type: str = 'ollama',
     extra_category: Optional[str] = None,
@@ -181,12 +182,14 @@ def categorize(
         client: LLM API client (Anthropic) or None for Ollama
         text: Document text content
         filename: Name of the PDF file
-        categories_content: Content of the categories.md file
+        category_rules: Content of the category_rules.md file
+        allowed_categories: Content of the allowed_categories.md file
         use_ollama: If True, use Ollama; otherwise use Anthropic
         model_type: 'ollama' or 'anthropic' for model-specific prompts
         extra_category: Optional extra category to append to all results
         ollama_model: Ollama model to use (default: qwen2.5:7b)
-        anthropic_model: Anthropic model to use (default: claude-sonnet-4-5-20250929)
+        anthropic_model: Anthropic model to use
+            (default: claude-sonnet-4-5-20250929)
 
     Returns:
         Category string (e.g., "banking" or "medical")
@@ -199,7 +202,9 @@ def categorize(
         return base_category
 
     # Use the new prompt system
-    prompt = get_categorization_prompt(text, categories_content, model_type=model_type)
+    prompt = get_categorization_prompt(
+        text, category_rules, allowed_categories, model_type=model_type
+    )
 
     try:
         response_text = call_llm(
@@ -332,7 +337,8 @@ def create_suggested_filename(originator: str, date_str: str, summary: str,
 def process_document_hybrid(
     text: str,
     filename: str,
-    categories_content: str,
+    category_rules: str,
+    allowed_categories: str,
     ollama_client: Any,
     anthropic_client: Any,
     extra_category: Optional[str] = None,
@@ -346,13 +352,15 @@ def process_document_hybrid(
     Args:
         text: Document text content
         filename: Name of the PDF file
-        categories_content: Content of categories.md file
+        category_rules: Content of category_rules.md file
+        allowed_categories: Content of allowed_categories.md file
         ollama_client: None (Ollama uses ollama module directly)
         anthropic_client: Anthropic client instance
         extra_category: Optional extra category to append
         quality_threshold: Threshold for Anthropic refinement (0.0-1.0)
         ollama_model: Ollama model to use (default: qwen2.5:7b)
-        anthropic_model: Anthropic model to use (default: claude-sonnet-4-5-20250929)
+        anthropic_model: Anthropic model to use
+            (default: claude-sonnet-4-5-20250929)
 
     Returns:
         Dictionary with analysis results and metadata
@@ -364,7 +372,7 @@ def process_document_hybrid(
         ollama_model=ollama_model, anthropic_model=anthropic_model
     )
     ollama_category = categorize(
-        ollama_client, text, filename, categories_content,
+        ollama_client, text, filename, category_rules, allowed_categories,
         use_ollama=True, model_type='ollama', extra_category=extra_category,
         ollama_model=ollama_model, anthropic_model=anthropic_model
     )
@@ -401,11 +409,12 @@ def process_document_hybrid(
     # Phase 3: Refine with Anthropic
     print("  Phase 2: Anthropic refinement needed...")
     anthropic_analysis = analyze_document(
-        anthropic_client, text, filename, use_ollama=False, model_type='anthropic',
+        anthropic_client, text, filename, use_ollama=False,
+        model_type='anthropic',
         ollama_model=ollama_model, anthropic_model=anthropic_model
     )
     anthropic_category = categorize(
-        anthropic_client, text, filename, categories_content,
+        anthropic_client, text, filename, category_rules, allowed_categories,
         use_ollama=False, model_type='anthropic', extra_category=extra_category,
         ollama_model=ollama_model, anthropic_model=anthropic_model
     )
@@ -493,15 +502,26 @@ def process_pdfs(
     # For backward compatibility
     client = anthropic_client if not use_ollama else ollama_client
 
-    # Read categories.md file
+    # Read category files
     script_dir = Path(__file__).parent
-    categories_file = script_dir / "categories.md"
+    category_rules_file = script_dir / "category_rules.md"
+    allowed_categories_file = script_dir / "allowed_categories.md"
 
-    if not categories_file.exists():
-        raise ValueError(f"categories.md file not found at {categories_file}")
+    if not category_rules_file.exists():
+        raise ValueError(
+            f"category_rules.md file not found at {category_rules_file}"
+        )
+    if not allowed_categories_file.exists():
+        raise ValueError(
+            f"allowed_categories.md file not found at "
+            f"{allowed_categories_file}"
+        )
 
-    with open(categories_file, 'r', encoding='utf-8') as f:
-        categories_content = f.read()
+    with open(category_rules_file, 'r', encoding='utf-8') as f:
+        category_rules = f.read()
+
+    with open(allowed_categories_file, 'r', encoding='utf-8') as f:
+        allowed_categories = f.read()
 
     # Get all PDF files
     pdf_files = sorted(incoming_dir.glob("*.pdf"))
@@ -566,7 +586,8 @@ def process_pdfs(
             hybrid_result = process_document_hybrid(
                 text,
                 pdf_path.name,
-                categories_content,
+                category_rules,
+                allowed_categories,
                 ollama_client,
                 anthropic_client,
                 extra_category,
@@ -590,8 +611,8 @@ def process_pdfs(
                 ollama_model, anthropic_model
             )
             category = categorize(
-                client, text, pdf_path.name, categories_content,
-                use_ollama, model_type, extra_category,
+                client, text, pdf_path.name, category_rules,
+                allowed_categories, use_ollama, model_type, extra_category,
                 ollama_model, anthropic_model
             )
 

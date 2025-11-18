@@ -41,32 +41,47 @@ def mock_anthropic_client():
 
 
 @pytest.fixture
-def categories_content():
-    """Load categories.md content"""
-    categories_file = Path(__file__).parent.parent / "src" / "process_pdfs" / "categories.md"
+def category_rules():
+    """Load category_rules.md content"""
+    rules_file = (
+        Path(__file__).parent.parent / "src" / "process_pdfs" /
+        "category_rules.md"
+    )
+    with open(rules_file, 'r', encoding='utf-8') as f:
+        return f.read()
+
+
+@pytest.fixture
+def allowed_categories():
+    """Load allowed_categories.md content"""
+    categories_file = (
+        Path(__file__).parent.parent / "src" / "process_pdfs" /
+        "allowed_categories.md"
+    )
     with open(categories_file, 'r', encoding='utf-8') as f:
         return f.read()
 
 
 @pytest.fixture
-def temp_incoming_dir():
-    """Create a temporary directory with a few test PDFs"""
+def temp_incoming_dir(test_data):
+    """Create a temporary directory with dummy test PDFs"""
     temp_dir = tempfile.mkdtemp()
     incoming_dir = Path(temp_dir) / "test-incoming"
     incoming_dir.mkdir()
 
-    # Copy a few PDFs from the real directory
-    real_incoming_dir = Path(__file__).parent.parent / "Incoming"
-    test_pdfs = [
-        "20250907095221.pdf",
-        "20250921120849.pdf",
-        "20251109114200.pdf"
-    ]
-
-    for pdf_name in test_pdfs:
-        src = real_incoming_dir / pdf_name
-        if src.exists():
-            shutil.copy(src, incoming_dir / pdf_name)
+    # Create dummy PDF files for each entry in test_data
+    # We don't need real PDFs since we mock the extraction and analysis
+    for pdf_name in test_data.keys():
+        pdf_path = incoming_dir / pdf_name
+        # Create a minimal valid PDF file
+        pdf_path.write_bytes(
+            b"%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj "
+            b"2 0 obj<</Type/Pages/Count 1/Kids[3 0 R]>>endobj "
+            b"3 0 obj<</Type/Page/MediaBox[0 0 612 792]/Parent 2 0 R>>endobj "
+            b"xref\n0 4\n0000000000 65535 f\n0000000009 00000 n\n"
+            b"0000000056 00000 n\n0000000115 00000 n\n"
+            b"trailer<</Size 4/Root 1 0 R>>\nstartxref\n190\n%%EOF"
+        )
 
     yield incoming_dir
 
@@ -208,7 +223,7 @@ class TestCategorize:
     """Tests for categorize function"""
 
     def test_categorize_with_valid_response(
-        self, mock_anthropic_client, categories_content
+        self, mock_anthropic_client, category_rules, allowed_categories
     ):
         # Mock the LLM response
         mock_message = Mock()
@@ -218,13 +233,13 @@ class TestCategorize:
         text = "This is a test document with enough text to categorize. " * 10
         result = categorize(
             mock_anthropic_client, text, "test.pdf",
-            categories_content, use_ollama=False
+            category_rules, allowed_categories, use_ollama=False
         )
 
         assert result == "banking-home-sandiego"
 
     def test_categorize_with_extra_category(
-        self, mock_anthropic_client, categories_content
+        self, mock_anthropic_client, category_rules, allowed_categories
     ):
         # Mock the LLM response
         mock_message = Mock()
@@ -234,19 +249,25 @@ class TestCategorize:
         text = "This is a test document with enough text to categorize. " * 10
         result = categorize(
             mock_anthropic_client, text, "test.pdf",
-            categories_content, use_ollama=False, extra_category="testcat"
+            category_rules, allowed_categories, use_ollama=False,
+            extra_category="testcat"
         )
 
         # Should be sorted alphabetically
         assert result == "banking-home-testcat"
 
-    def test_categorize_with_insufficient_text(self, mock_anthropic_client, categories_content):
+    def test_categorize_with_insufficient_text(
+        self, mock_anthropic_client, category_rules, allowed_categories
+    ):
         text = "Too short"
-        result = categorize(mock_anthropic_client, text, "test.pdf", categories_content)
+        result = categorize(
+            mock_anthropic_client, text, "test.pdf",
+            category_rules, allowed_categories
+        )
         assert result == "reviewcategory"
 
     def test_categorize_removes_markdown(
-        self, mock_anthropic_client, categories_content
+        self, mock_anthropic_client, category_rules, allowed_categories
     ):
         # Mock response with backticks
         mock_message = Mock()
@@ -256,23 +277,25 @@ class TestCategorize:
         text = "This is a test document with enough text to categorize. " * 10
         result = categorize(
             mock_anthropic_client, text, "test.pdf",
-            categories_content, use_ollama=False
+            category_rules, allowed_categories, use_ollama=False
         )
 
         assert result == "banking-home"
 
     def test_categorize_takes_first_line_only(
-        self, mock_anthropic_client, categories_content
+        self, mock_anthropic_client, category_rules, allowed_categories
     ):
         # Mock response with multiple lines
         mock_message = Mock()
-        mock_message.content = [Mock(text='banking-home\nSome extra text\nMore text')]
+        mock_message.content = [
+            Mock(text='banking-home\nSome extra text\nMore text')
+        ]
         mock_anthropic_client.messages.create.return_value = mock_message
 
         text = "This is a test document with enough text to categorize. " * 10
         result = categorize(
             mock_anthropic_client, text, "test.pdf",
-            categories_content, use_ollama=False
+            category_rules, allowed_categories, use_ollama=False
         )
 
         assert result == "banking-home"
@@ -315,12 +338,17 @@ class TestProcessPDFsIntegration:
 class TestProcessPDFsWithTestData:
     """Tests using the test_data.json fixture to simulate LLM responses"""
 
+    @patch('process_pdfs.cli.extract_text_from_pdf')
     @patch('process_pdfs.cli.analyze_document')
     @patch('process_pdfs.cli.categorize')
     def test_process_single_pdf_with_test_data(
-        self, mock_categorize, mock_analyze, temp_incoming_dir, test_data
+        self, mock_categorize, mock_analyze, mock_extract_text,
+        temp_incoming_dir, test_data
     ):
         """Test processing a single PDF with predefined test data"""
+
+        # Mock extract_text_from_pdf to return dummy text
+        mock_extract_text.return_value = "This is dummy PDF text for testing purposes."
 
         # Set up mock returns based on test_data
         def analyze_side_effect(
@@ -337,9 +365,10 @@ class TestProcessPDFsWithTestData:
             return None
 
         def categorize_side_effect(
-            client, text, filename, categories_content,
+            client, text, filename, category_rules, allowed_categories,
             use_ollama=True, model_type='ollama', extra_category=None,
-            ollama_model='qwen2.5:7b', anthropic_model='claude-sonnet-4-5-20250929'
+            ollama_model='qwen2.5:7b',
+            anthropic_model='claude-sonnet-4-5-20250929'
         ):
             if filename in test_data:
                 category = test_data[filename]["category"]

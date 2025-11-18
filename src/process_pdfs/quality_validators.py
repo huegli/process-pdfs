@@ -75,7 +75,7 @@ def validate_category(category_str: str) -> bool:
         return True
 
     # Too many categories (likely over-tagged)
-    if len(categories) > 3:
+    if len(categories) > 4:
         return True
 
     return False
@@ -98,7 +98,7 @@ def validate_summary(summary_str: str) -> float:
     length = len(summary_str)
     if length > 80:
         return 0.3  # Too long
-    if length < 10:
+    if length < 20:
         return 0.4  # Too short/generic
 
     # Penalize very generic summaries
@@ -151,7 +151,7 @@ def validate_originator(originator_str: str) -> float:
 
 def should_refine_with_anthropic(
     result: Dict[str, str],
-    threshold: float = 0.6
+    threshold: float = 0.5
 ) -> bool:
     """
     Determine if a result should be refined with Anthropic API.
