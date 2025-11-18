@@ -128,15 +128,6 @@ categories.
 Document text:
 {text[:4000]}
 
-INSTRUCTIONS:
-1. Choose 2-3 PRIMARY categories that best describe this document
-2. Use ONLY lowercase words from the allowed categories list above
-3. If uncertain, use "reviewcategory"
-4. Sort alphabetically and join with '-'
-5. Do NOT add trailing dashes
-
-Examples: "medical", "creditcard", "home-sandiego"
-
 Respond with ONLY the category string on one line."""
 
 
@@ -156,39 +147,5 @@ categories provided.
 Document text:
 {text[:4000]}
 
-CATEGORIZATION STRATEGY:
-1. Identify the PRIMARY purpose of this document (choose ONE main category)
-2. Add ONLY 2-3 secondary categories if directly relevant
-3. Maximum 3-4 categories total (prefer 3)
-
-STRICT CATEGORY RULES:
-- "medical" - Only for medical bills, doctor visits, prescriptions, records
-- "banking" - Only for bank statements, deposits (NOT credit cards)
-- "creditcard" - Only for credit card statements (NOT other invoices).
-  Use EITHER "banking" or "creditcard"
-- "insurance" - Only for insurance policies, claims, EOBs.
-  Do not use together with "banking"
-- "home"/"rental" - Only if document relates to specific property.
-  Use "rental" for "Seahorn" "home" for "Elizabeth" or "Brookside"
-- "education" - Only for school-related documents (tuition, grades).
-  Use for "St. Isidore", "Charles Borromeo"
-- Person names (lucy, mikhaila, etc.) - ONLY if document is specifically \
-FOR that person
-
-IMPORTANT RESTRICTIONS:
-- Do NOT add categories just because they might be related
-- Do NOT add location tags unless document is about that property
-- Do NOT add person names unless document is FOR that specific person
-- If unsure, use fewer categories
-
-CRITICAL RULES:
-1. MAXIMUM 4 categories (prefer 3)
-2. NO duplicate categories
-3. NO trailing dashes
-4. Use ONLY words from allowed categories list
-5. If no clear category, use "reviewcategory"
-6. Sort alphabetically and join with '-'
-
 Respond with ONLY a single line containing the category string.
-Example outputs: "medical", "banking-home", "creditcard-sandiego"
 Do NOT include explanations."""

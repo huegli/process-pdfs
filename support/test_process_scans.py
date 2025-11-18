@@ -227,7 +227,7 @@ class TestCategorize:
     ):
         # Mock the LLM response
         mock_message = Mock()
-        mock_message.content = [Mock(text='banking-home-sandiego')]
+        mock_message.content = [Mock(text='banking_home_sandiego')]
         mock_anthropic_client.messages.create.return_value = mock_message
 
         text = "This is a test document with enough text to categorize. " * 10
@@ -236,14 +236,14 @@ class TestCategorize:
             category_rules, allowed_categories, use_ollama=False
         )
 
-        assert result == "banking-home-sandiego"
+        assert result == "banking_home_sandiego"
 
     def test_categorize_with_extra_category(
         self, mock_anthropic_client, category_rules, allowed_categories
     ):
         # Mock the LLM response
         mock_message = Mock()
-        mock_message.content = [Mock(text='banking-home')]
+        mock_message.content = [Mock(text='banking_home')]
         mock_anthropic_client.messages.create.return_value = mock_message
 
         text = "This is a test document with enough text to categorize. " * 10
@@ -254,7 +254,7 @@ class TestCategorize:
         )
 
         # Should be sorted alphabetically
-        assert result == "banking-home-testcat"
+        assert result == "banking_home_testcat"
 
     def test_categorize_with_insufficient_text(
         self, mock_anthropic_client, category_rules, allowed_categories
@@ -271,7 +271,7 @@ class TestCategorize:
     ):
         # Mock response with backticks
         mock_message = Mock()
-        mock_message.content = [Mock(text='`banking-home`')]
+        mock_message.content = [Mock(text='`banking_home`')]
         mock_anthropic_client.messages.create.return_value = mock_message
 
         text = "This is a test document with enough text to categorize. " * 10
@@ -280,7 +280,7 @@ class TestCategorize:
             category_rules, allowed_categories, use_ollama=False
         )
 
-        assert result == "banking-home"
+        assert result == "banking_home"
 
     def test_categorize_takes_first_line_only(
         self, mock_anthropic_client, category_rules, allowed_categories
@@ -288,7 +288,7 @@ class TestCategorize:
         # Mock response with multiple lines
         mock_message = Mock()
         mock_message.content = [
-            Mock(text='banking-home\nSome extra text\nMore text')
+            Mock(text='banking_home\nSome extra text\nMore text')
         ]
         mock_anthropic_client.messages.create.return_value = mock_message
 
@@ -298,7 +298,7 @@ class TestCategorize:
             category_rules, allowed_categories, use_ollama=False
         )
 
-        assert result == "banking-home"
+        assert result == "banking_home"
 
 
 class TestExtractTextFromPDF:

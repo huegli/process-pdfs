@@ -197,8 +197,6 @@ def categorize(
     if not text or len(text.strip()) < 50:
         print(f"  ⚠ Insufficient text for categorization of {filename}")
         base_category = "reviewcategory"
-        if extra_category:
-            return "-".join(sorted([base_category, extra_category]))
         return base_category
 
     # Use the new prompt system
@@ -240,20 +238,15 @@ def categorize(
         if extra_category:
             if extra_category not in unique_categories:
                 unique_categories.append(extra_category)
-                # Re-enforce max 4 after adding extra category
-                if len(unique_categories) > 4:
-                    unique_categories = unique_categories[:4]
 
         # Sort and rejoin
-        response_text = "-".join(sorted(unique_categories))
+        response_text = "_".join(sorted(unique_categories))
 
         return response_text
 
     except Exception as e:
         print(f"  ⚠ Error categorizing {filename}: {e}")
         base_category = "reviewcategory"
-        if extra_category:
-            return "-".join(sorted([base_category, extra_category]))
         return base_category
 
 
@@ -386,8 +379,6 @@ def process_document_hybrid(
 
     if not ollama_category:
         ollama_category = 'reviewcategory'
-        if extra_category:
-            ollama_category = "-".join(sorted([ollama_category, extra_category]))
 
     # Combine Ollama results
     ollama_result = {
@@ -548,14 +539,15 @@ def process_pdfs(
                     filename_stem, "%Y%m%d%H%M%S"
                 )
             else:
-                # Fall back to file system creation time
+                # TODO: Try out using the earlier of ctime and mtime
+                # Fall back to file system modification time
                 file_creation_time = datetime.fromtimestamp(
-                    pdf_path.stat().st_ctime
+                    pdf_path.stat().st_mtime
                 )
         except ValueError:
-            # Fall back to file system creation time if parsing fails
+            # Fall back to file system modification time if parsing fails
             file_creation_time = datetime.fromtimestamp(
-                pdf_path.stat().st_ctime
+                pdf_path.stat().st_time
             )
 
         # Extract text
@@ -618,8 +610,6 @@ def process_pdfs(
 
             if not category:
                 category = "reviewcategory"
-                if extra_category:
-                    category = "-".join(sorted([category, extra_category]))
 
             if analysis:
                 originator = analysis.get("originator", "Unknown")
@@ -698,10 +688,6 @@ def create_rename_script(
             new_path = incoming_dir / suggested_filename
             script_lines.append(f'mv "{original_path}" "{new_path}"')
 
-        # Open files that need review
-        if 'review' in suggested_filename.lower():
-            script_lines.append(f'open "{new_path}"')
-
         script_lines.append('')
 
     # Write the script
@@ -728,7 +714,6 @@ def rename_files_directly(
         incoming_dir: Directory containing the original PDF files
         output_dir: Optional directory to copy renamed files to (instead of in-place rename)
     """
-    files_to_open = []
 
     for result in results:
         original_filename = result['filename']
@@ -754,16 +739,6 @@ def rename_files_directly(
             new_path = incoming_dir / suggested_filename
             original_path.rename(new_path)
             print(f"  ✓ Renamed {original_filename} -> {suggested_filename}")
-
-        # Track files that need review to open later
-        if 'review' in suggested_filename.lower():
-            files_to_open.append(new_path)
-
-    # Open files that need review
-    if files_to_open:
-        print(f"\nOpening {len(files_to_open)} file(s) for review...")
-        for file_path in files_to_open:
-            os.system(f'open "{file_path}"')
 
     print(f"\n✓ Successfully renamed {len(results)} files")
 
