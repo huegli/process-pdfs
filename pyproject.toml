@@ -40,3 +40,10 @@ process-pdfs = "process_pdfs.__main__:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/process_pdfs"]
+
+[dependency-groups]
+dev = [
+    "black>=25.11.0",
+    "python-lsp-server[all]>=1.13.1",
+    "ruff>=0.14.5",
+]
