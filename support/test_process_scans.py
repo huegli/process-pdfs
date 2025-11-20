@@ -457,5 +457,277 @@ class TestProcessPDFsWithTestData:
     #                 assert row['category'] == test_data[row['filename']]['category']
 
 
+class TestRecursiveSearchBehavior:
+    """Tests for recursive vs non-recursive search behavior"""
+
+    @pytest.fixture
+    def temp_dir_with_subdirs(self):
+        """Create a temporary directory structure with PDFs in subdirectories"""
+        temp_dir = tempfile.mkdtemp()
+        base_dir = Path(temp_dir) / "test-base"
+        base_dir.mkdir()
+
+        # Create PDFs in the base directory
+        for i in range(2):
+            pdf_path = base_dir / f"base_file_{i}.pdf"
+            pdf_path.write_bytes(
+                b"%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj "
+                b"2 0 obj<</Type/Pages/Count 1/Kids[3 0 R]>>endobj "
+                b"3 0 obj<</Type/Page/MediaBox[0 0 612 792]/Parent 2 0 R>>endobj "
+                b"xref\n0 4\n0000000000 65535 f\n0000000009 00000 n\n"
+                b"0000000056 00000 n\n0000000115 00000 n\n"
+                b"trailer<</Size 4/Root 1 0 R>>\nstartxref\n190\n%%EOF"
+            )
+
+        # Create subdirectory with PDFs
+        subdir1 = base_dir / "subdir1"
+        subdir1.mkdir()
+        for i in range(3):
+            pdf_path = subdir1 / f"sub1_file_{i}.pdf"
+            pdf_path.write_bytes(
+                b"%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj "
+                b"2 0 obj<</Type/Pages/Count 1/Kids[3 0 R]>>endobj "
+                b"3 0 obj<</Type/Page/MediaBox[0 0 612 792]/Parent 2 0 R>>endobj "
+                b"xref\n0 4\n0000000000 65535 f\n0000000009 00000 n\n"
+                b"0000000056 00000 n\n0000000115 00000 n\n"
+                b"trailer<</Size 4/Root 1 0 R>>\nstartxref\n190\n%%EOF"
+            )
+
+        # Create nested subdirectory with PDFs
+        subdir2 = subdir1 / "nested"
+        subdir2.mkdir()
+        for i in range(2):
+            pdf_path = subdir2 / f"nested_file_{i}.pdf"
+            pdf_path.write_bytes(
+                b"%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj "
+                b"2 0 obj<</Type/Pages/Count 1/Kids[3 0 R]>>endobj "
+                b"3 0 obj<</Type/Page/MediaBox[0 0 612 792]/Parent 2 0 R>>endobj "
+                b"xref\n0 4\n0000000000 65535 f\n0000000009 00000 n\n"
+                b"0000000056 00000 n\n0000000115 00000 n\n"
+                b"trailer<</Size 4/Root 1 0 R>>\nstartxref\n190\n%%EOF"
+            )
+
+        yield base_dir
+
+        # Cleanup
+        shutil.rmtree(temp_dir)
+
+    @patch('process_pdfs.cli.extract_text_from_pdf')
+    @patch('process_pdfs.cli.analyze_document')
+    @patch('process_pdfs.cli.categorize')
+    def test_non_recursive_search_only_base_dir(
+        self, mock_categorize, mock_analyze, mock_extract_text,
+        temp_dir_with_subdirs
+    ):
+        """Test that non-recursive search only processes PDFs in base directory"""
+
+        # Mock returns
+        mock_extract_text.return_value = "Test PDF content for analysis."
+        mock_analyze.return_value = {
+            "originator": "Test Company",
+            "date": "2025-01-01",
+            "summary": "Test document"
+        }
+        mock_categorize.return_value = "test-category"
+
+        # Create output CSV
+        output_csv = temp_dir_with_subdirs.parent / "test_nonrecursive.csv"
+
+        # Mock Anthropic initialization
+        with patch('process_pdfs.cli.Anthropic'), \
+             patch('process_pdfs.cli.os.getenv', return_value='fake-api-key'):
+
+            # Process with non-recursive search (use_recursive_search=False)
+            process_pdfs(
+                temp_dir_with_subdirs,
+                output_csv,
+                use_recursive_search=False
+            )
+
+        # Verify the CSV was created
+        assert output_csv.exists()
+
+        # Verify only base directory PDFs were processed (2 files)
+        with open(output_csv, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+
+        # Should only have 2 PDFs from base directory
+        assert len(rows) == 2
+        for row in rows:
+            # All files should start with "base_file_"
+            assert row['filename'].startswith('base_file_')
+
+    @patch('process_pdfs.cli.extract_text_from_pdf')
+    @patch('process_pdfs.cli.analyze_document')
+    @patch('process_pdfs.cli.categorize')
+    def test_recursive_search_all_subdirs(
+        self, mock_categorize, mock_analyze, mock_extract_text,
+        temp_dir_with_subdirs
+    ):
+        """Test that recursive search processes PDFs in all subdirectories"""
+
+        # Mock returns
+        mock_extract_text.return_value = "Test PDF content for analysis."
+        mock_analyze.return_value = {
+            "originator": "Test Company",
+            "date": "2025-01-01",
+            "summary": "Test document"
+        }
+        mock_categorize.return_value = "test-category"
+
+        # Create output CSV
+        output_csv = temp_dir_with_subdirs.parent / "test_recursive.csv"
+
+        # Mock Anthropic initialization
+        with patch('process_pdfs.cli.Anthropic'), \
+             patch('process_pdfs.cli.os.getenv', return_value='fake-api-key'):
+
+            # Process with recursive search (use_recursive_search=True)
+            process_pdfs(
+                temp_dir_with_subdirs,
+                output_csv,
+                use_recursive_search=True
+            )
+
+        # Verify the CSV was created
+        assert output_csv.exists()
+
+        # Verify all PDFs were processed (2 base + 3 subdir1 + 2 nested = 7)
+        with open(output_csv, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+
+        # Should have all 7 PDFs
+        assert len(rows) == 7
+
+        # Check that we have PDFs from all directories
+        filenames = [row['filename'] for row in rows]
+        base_files = [f for f in filenames if f.startswith('base_file_')]
+        sub1_files = [f for f in filenames if f.startswith('sub1_file_')]
+        nested_files = [f for f in filenames if f.startswith('nested_file_')]
+
+        assert len(base_files) == 2
+        assert len(sub1_files) == 3
+        assert len(nested_files) == 2
+
+    @patch('process_pdfs.cli.extract_text_from_pdf')
+    @patch('process_pdfs.cli.analyze_document')
+    @patch('process_pdfs.cli.categorize')
+    def test_recursive_search_with_hybrid_mode(
+        self, mock_categorize, mock_analyze, mock_extract_text,
+        temp_dir_with_subdirs
+    ):
+        """Test recursive search works correctly with hybrid mode"""
+
+        # Mock returns
+        mock_extract_text.return_value = "Test PDF content for analysis."
+        mock_analyze.return_value = {
+            "originator": "Test Company",
+            "date": "2025-01-01",
+            "summary": "Test document"
+        }
+        mock_categorize.return_value = "test-category"
+
+        # Create output CSV
+        output_csv = temp_dir_with_subdirs.parent / "test_recursive_hybrid.csv"
+
+        # Mock Anthropic initialization
+        with patch('process_pdfs.cli.Anthropic'), \
+             patch('process_pdfs.cli.os.getenv', return_value='fake-api-key'):
+
+            # Process with recursive search and hybrid mode
+            process_pdfs(
+                temp_dir_with_subdirs,
+                output_csv,
+                use_ollama=True,
+                use_hybrid=True,
+                use_recursive_search=True
+            )
+
+        # Verify the CSV was created
+        assert output_csv.exists()
+
+        # Verify all PDFs were processed
+        with open(output_csv, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+
+        # Should have all 7 PDFs
+        assert len(rows) == 7
+
+    @patch('process_pdfs.cli.extract_text_from_pdf')
+    @patch('process_pdfs.cli.analyze_document')
+    @patch('process_pdfs.cli.categorize')
+    def test_empty_directory_non_recursive(
+        self, mock_categorize, mock_analyze, mock_extract_text
+    ):
+        """Test non-recursive search handles empty directory correctly"""
+
+        # Create empty directory
+        temp_dir = tempfile.mkdtemp()
+        empty_dir = Path(temp_dir) / "empty"
+        empty_dir.mkdir()
+
+        # Create output CSV
+        output_csv = Path(temp_dir) / "test_empty.csv"
+
+        # Mock Anthropic initialization
+        with patch('process_pdfs.cli.Anthropic'), \
+             patch('process_pdfs.cli.os.getenv', return_value='fake-api-key'):
+
+            # Process with non-recursive search
+            process_pdfs(
+                empty_dir,
+                output_csv,
+                use_recursive_search=False
+            )
+
+        # CSV should not be created when no files are found
+        assert not output_csv.exists()
+
+        # Cleanup
+        shutil.rmtree(temp_dir)
+
+    @patch('process_pdfs.cli.extract_text_from_pdf')
+    @patch('process_pdfs.cli.analyze_document')
+    @patch('process_pdfs.cli.categorize')
+    def test_only_subdirs_non_recursive(
+        self, mock_categorize, mock_analyze, mock_extract_text,
+        temp_dir_with_subdirs
+    ):
+        """Test non-recursive search ignores PDFs in subdirectories"""
+
+        # Remove all PDFs from base directory
+        for pdf in temp_dir_with_subdirs.glob("*.pdf"):
+            pdf.unlink()
+
+        # Mock returns
+        mock_extract_text.return_value = "Test PDF content for analysis."
+        mock_analyze.return_value = {
+            "originator": "Test Company",
+            "date": "2025-01-01",
+            "summary": "Test document"
+        }
+        mock_categorize.return_value = "test-category"
+
+        # Create output CSV
+        output_csv = temp_dir_with_subdirs.parent / "test_only_subdirs.csv"
+
+        # Mock Anthropic initialization
+        with patch('process_pdfs.cli.Anthropic'), \
+             patch('process_pdfs.cli.os.getenv', return_value='fake-api-key'):
+
+            # Process with non-recursive search
+            process_pdfs(
+                temp_dir_with_subdirs,
+                output_csv,
+                use_recursive_search=False
+            )
+
+        # CSV should not be created when no PDFs in base directory
+        assert not output_csv.exists()
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
