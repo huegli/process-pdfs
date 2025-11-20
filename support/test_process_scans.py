@@ -607,10 +607,11 @@ class TestRecursiveSearchBehavior:
         assert len(rows) == 7
 
         # Check that we have PDFs from all directories
+        # Note: filenames now include relative paths (e.g., "subdir1/sub1_file_0.pdf")
         filenames = [row['filename'] for row in rows]
-        base_files = [f for f in filenames if f.startswith('base_file_')]
-        sub1_files = [f for f in filenames if f.startswith('sub1_file_')]
-        nested_files = [f for f in filenames if f.startswith('nested_file_')]
+        base_files = [f for f in filenames if 'base_file_' in f]
+        sub1_files = [f for f in filenames if 'sub1_file_' in f]
+        nested_files = [f for f in filenames if 'nested_file_' in f]
 
         assert len(base_files) == 2
         assert len(sub1_files) == 3

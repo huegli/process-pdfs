@@ -551,7 +551,9 @@ def process_pdfs(
     results = []
 
     for pdf_path in tqdm(pdf_files, desc="Processing PDFs", unit="file"):
-        print(f"Processing {pdf_path.name}...")
+        # Get relative path from incoming_dir to preserve subdirectory structure
+        relative_path = pdf_path.relative_to(incoming_dir)
+        print(f"Processing {relative_path}...")
 
         # Extract timestamp from filename (format: YYYYMMDDHHMMSS.pdf)
         # If filename doesn't match pattern, fall back to file creation time
@@ -587,7 +589,7 @@ def process_pdfs(
                 originator, date, summary, file_creation_time, category
             )
             results.append({
-                "filename": pdf_path.name,
+                "filename": str(relative_path),
                 "originator": originator,
                 "date": date,
                 "summary": summary,
@@ -651,7 +653,7 @@ def process_pdfs(
             originator, date, summary, file_creation_time, category
         )
         results.append({
-            "filename": pdf_path.name,
+            "filename": str(relative_path),
             "originator": originator,
             "date": date,
             "summary": summary,
@@ -704,13 +706,18 @@ def create_rename_script(
 
         original_path = incoming_dir / original_filename
 
+        # Preserve subdirectory structure
+        # Get the parent directory of the original file (relative to incoming_dir)
+        relative_parent = Path(original_filename).parent
+
         if output_dir:
-            # Copy to output directory with new name
-            new_path = output_dir / suggested_filename
+            # Copy to output directory with new name, preserving subdirectory structure
+            new_path = output_dir / relative_parent / suggested_filename
+            script_lines.append(f'mkdir -p "{new_path.parent}"')
             script_lines.append(f'cp "{original_path}" "{new_path}"')
         else:
-            # Rename in place
-            new_path = incoming_dir / suggested_filename
+            # Rename in place, in the same subdirectory
+            new_path = incoming_dir / relative_parent / suggested_filename
             script_lines.append(f'mv "{original_path}" "{new_path}"')
 
         script_lines.append('')
@@ -754,16 +761,22 @@ def rename_files_directly(
             print(f"  ⚠ Warning: {original_filename} not found, skipping")
             continue
 
+        # Preserve subdirectory structure
+        # Get the parent directory of the original file (relative to incoming_dir)
+        relative_parent = Path(original_filename).parent
+
         if output_dir:
-            # Copy to output directory with new name
-            new_path = output_dir / suggested_filename
+            # Copy to output directory with new name, preserving subdirectory structure
+            new_path = output_dir / relative_parent / suggested_filename
+            # Create parent directory if it doesn't exist
+            new_path.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(original_path, new_path)
             print(f"  ✓ Copied {original_filename} -> {new_path}")
         else:
-            # Rename in place
-            new_path = incoming_dir / suggested_filename
+            # Rename in place, in the same subdirectory
+            new_path = incoming_dir / relative_parent / suggested_filename
             original_path.rename(new_path)
-            print(f"  ✓ Renamed {original_filename} -> {suggested_filename}")
+            print(f"  ✓ Renamed {original_filename} -> {relative_parent / suggested_filename}")
 
     print(f"\n✓ Successfully renamed {len(results)} files")
 
