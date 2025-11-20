@@ -353,7 +353,8 @@ class TestProcessPDFsWithTestData:
         # Set up mock returns based on test_data
         def analyze_side_effect(
             client, text, filename, use_ollama=True, model_type='ollama',
-            ollama_model='qwen2.5:7b', anthropic_model='claude-sonnet-4-5-20250929'
+            ollama_model='qwen2.5:7b', anthropic_model='claude-sonnet-4-5-20250929',
+            use_filename=False
         ):
             if filename in test_data:
                 data = test_data[filename]

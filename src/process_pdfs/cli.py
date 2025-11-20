@@ -28,7 +28,11 @@ from dotenv import load_dotenv
 from tqdm import tqdm
 
 # Import new modules
-from .prompts import get_analysis_prompt, get_categorization_prompt
+from .prompts import (
+    get_analysis_prompt,
+    get_analysis_prompt_with_filename,
+    get_categorization_prompt
+)
 from .quality_validators import (
     should_refine_with_anthropic,
     merge_results
@@ -107,7 +111,8 @@ def analyze_document(
     use_ollama: bool = True,
     model_type: str = 'ollama',
     ollama_model: str = 'qwen2.5:7b',
-    anthropic_model: str = 'claude-sonnet-4-5-20250929'
+    anthropic_model: str = 'claude-sonnet-4-5-20250929',
+    use_filename: bool = False
 ) -> Optional[Dict[str, str]]:
     """
     Use LLM to analyze document text and extract structured information.
@@ -120,6 +125,7 @@ def analyze_document(
         model_type: 'ollama' or 'anthropic' for model-specific prompts
         ollama_model: Ollama model to use (default: qwen2.5:7b)
         anthropic_model: Anthropic model to use (default: claude-sonnet-4-5-20250929)
+        use_filename: If True, use filename as starting point for analysis
 
     Returns:
         Dictionary with originator, date, and summary, or None if analysis fails
@@ -129,7 +135,12 @@ def analyze_document(
         return None
 
     # Use the new prompt system
-    prompt = get_analysis_prompt(text, model_type=model_type)
+    if use_filename:
+        prompt = get_analysis_prompt_with_filename(
+            text, filename, model_type=model_type
+        )
+    else:
+        prompt = get_analysis_prompt(text, model_type=model_type)
 
     try:
         response_text = call_llm(
@@ -337,7 +348,8 @@ def process_document_hybrid(
     extra_category: Optional[str] = None,
     quality_threshold: float = 0.6,
     ollama_model: str = 'qwen2.5:7b',
-    anthropic_model: str = 'claude-sonnet-4-5-20250929'
+    anthropic_model: str = 'claude-sonnet-4-5-20250929',
+    use_filename: bool = False
 ) -> Dict[str, Any]:
     """
     Process a document using hybrid mode: Ollama first, Anthropic refinement.
@@ -354,6 +366,7 @@ def process_document_hybrid(
         ollama_model: Ollama model to use (default: qwen2.5:7b)
         anthropic_model: Anthropic model to use
             (default: claude-sonnet-4-5-20250929)
+        use_filename: If True, use filename as starting point for analysis
 
     Returns:
         Dictionary with analysis results and metadata
@@ -362,7 +375,8 @@ def process_document_hybrid(
     print("  Phase 1: Ollama analysis...")
     ollama_analysis = analyze_document(
         ollama_client, text, filename, use_ollama=True, model_type='ollama',
-        ollama_model=ollama_model, anthropic_model=anthropic_model
+        ollama_model=ollama_model, anthropic_model=anthropic_model,
+        use_filename=use_filename
     )
     ollama_category = categorize(
         ollama_client, text, filename, category_rules, allowed_categories,
@@ -402,7 +416,8 @@ def process_document_hybrid(
     anthropic_analysis = analyze_document(
         anthropic_client, text, filename, use_ollama=False,
         model_type='anthropic',
-        ollama_model=ollama_model, anthropic_model=anthropic_model
+        ollama_model=ollama_model, anthropic_model=anthropic_model,
+        use_filename=use_filename
     )
     anthropic_category = categorize(
         anthropic_client, text, filename, category_rules, allowed_categories,
@@ -442,7 +457,8 @@ def process_pdfs(
     quality_threshold: float = 0.6,
     ollama_model: str = 'qwen2.5:7b',
     anthropic_model: str = 'claude-sonnet-4-5-20250929',
-    use_recursive_search: bool = False
+    use_recursive_search: bool = False,
+    use_filename: bool = False
 ):
     """
     Process all PDFs in the incoming directory and create a CSV summary.
@@ -457,6 +473,7 @@ def process_pdfs(
         ollama_model: Ollama model to use (default: qwen2.5:7b)
         anthropic_model: Anthropic model to use (default: claude-sonnet-4-5-20250929)
         use_recursive_search: If True, search subdirectories recursively (default: False)
+        use_filename: If True, use filename as starting point for analysis
     """
     # Initialize API clients
     ollama_client = None  # Ollama uses the ollama module directly
@@ -592,7 +609,8 @@ def process_pdfs(
                 extra_category,
                 quality_threshold,
                 ollama_model,
-                anthropic_model
+                anthropic_model,
+                use_filename
             )
             result = hybrid_result['result']
             originator = result.get("originator", "Unknown")
@@ -607,7 +625,7 @@ def process_pdfs(
             # Single-model mode (Ollama or Anthropic)
             analysis = analyze_document(
                 client, text, pdf_path.name, use_ollama, model_type,
-                ollama_model, anthropic_model
+                ollama_model, anthropic_model, use_filename
             )
             category = categorize(
                 client, text, pdf_path.name, category_rules,
@@ -810,6 +828,11 @@ def main():
         help='Extra category tag to append to all documents'
     )
     parser.add_argument(
+        '--use-filename',
+        action='store_true',
+        help='Use PDF filename as starting point for determining originator, date, and summary'
+    )
+    parser.add_argument(
         '--input',
         type=str,
         default=None,
@@ -910,7 +933,8 @@ def main():
             args.threshold,
             args.ollama_model,
             args.anthropic_model,
-            use_recursive_search
+            use_recursive_search,
+            args.use_filename
         )
 
         # Handle post-processing based on mode
