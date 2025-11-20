@@ -441,7 +441,8 @@ def process_pdfs(
     extra_category: Optional[str] = None,
     quality_threshold: float = 0.6,
     ollama_model: str = 'qwen2.5:7b',
-    anthropic_model: str = 'claude-sonnet-4-5-20250929'
+    anthropic_model: str = 'claude-sonnet-4-5-20250929',
+    use_recursive_search: bool = False
 ):
     """
     Process all PDFs in the incoming directory and create a CSV summary.
@@ -455,6 +456,7 @@ def process_pdfs(
         quality_threshold: Quality threshold for hybrid mode (0.0-1.0)
         ollama_model: Ollama model to use (default: qwen2.5:7b)
         anthropic_model: Anthropic model to use (default: claude-sonnet-4-5-20250929)
+        use_recursive_search: If True, search subdirectories recursively (default: False)
     """
     # Initialize API clients
     ollama_client = None  # Ollama uses the ollama module directly
@@ -514,14 +516,19 @@ def process_pdfs(
     with open(allowed_categories_file, 'r', encoding='utf-8') as f:
         allowed_categories = f.read()
 
-    # Get all PDF files
-    pdf_files = sorted(incoming_dir.glob("*.pdf"))
+    # Get all PDF files - recursive or non-recursive based on flag
+    if use_recursive_search:
+        pdf_files = sorted(incoming_dir.glob("**/*.pdf"))
+        search_mode = "recursively"
+    else:
+        pdf_files = sorted(incoming_dir.glob("*.pdf"))
+        search_mode = "non-recursively"
 
     if not pdf_files:
-        print(f"No PDF files found in {incoming_dir}")
+        print(f"No PDF files found in {incoming_dir} ({search_mode})")
         return
 
-    print(f"Found {len(pdf_files)} PDF files to process\n")
+    print(f"Found {len(pdf_files)} PDF files to process ({search_mode})\n")
 
     # Process each PDF and collect results
     results = []
@@ -805,8 +812,9 @@ def main():
     parser.add_argument(
         '--input',
         type=str,
-        default='Incoming',
-        help='Directory from which to read PDF files (default: Incoming)'
+        default=None,
+        help='Directory from which to read PDF files recursively '
+             '(default: current directory, non-recursive)'
     )
     parser.add_argument(
         '--output',
@@ -831,12 +839,21 @@ def main():
     # Define paths
     script_dir = Path(__file__).parent
 
-    # Handle input directory - can be absolute or relative to script directory
-    input_path = Path(args.input)
-    if input_path.is_absolute():
-        incoming_dir = input_path
+    # Handle input directory - determine if recursive search is needed
+    # If --input is not specified, use current directory (non-recursive)
+    # If --input is specified, use that directory (recursive)
+    use_recursive_search = args.input is not None
+
+    if args.input is None:
+        # Default: current directory, non-recursive
+        incoming_dir = Path.cwd()
     else:
-        incoming_dir = script_dir / args.input
+        # Specified directory, recursive
+        input_path = Path(args.input)
+        if input_path.is_absolute():
+            incoming_dir = input_path
+        else:
+            incoming_dir = script_dir / args.input
 
     # Determine output path based on mode
     mode = args.mode
@@ -892,7 +909,8 @@ def main():
             args.category,
             args.threshold,
             args.ollama_model,
-            args.anthropic_model
+            args.anthropic_model,
+            use_recursive_search
         )
 
         # Handle post-processing based on mode
