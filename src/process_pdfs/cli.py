@@ -554,7 +554,7 @@ def process_pdfs(
         except ValueError:
             # Fall back to file system modification time if parsing fails
             file_creation_time = datetime.fromtimestamp(
-                pdf_path.stat().st_time
+                pdf_path.stat().st_mtime
             )
 
         # Extract text
