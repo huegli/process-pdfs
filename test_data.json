@@ -160,5 +160,35 @@
     "date": "2025-10-02",
     "summary": "Notice of assignment, sale or transfer of mortgage loan",
     "category": "home-mortgage-property-sandiego"
+  },
+  "Chase_Bank_20240315_Statement.pdf": {
+    "originator": "Chase Bank",
+    "date": "2024-03-15",
+    "summary": "Monthly account statement",
+    "category": "banking-home-sandiego"
+  },
+  "Vanguard_2024-06-30_Quarterly_Report.pdf": {
+    "originator": "Vanguard",
+    "date": "2024-06-30",
+    "summary": "Quarterly investment report",
+    "category": "banking-home-sandiego"
+  },
+  "SDG&E_Utility_Bill_2024-08-20.pdf": {
+    "originator": "SDG&E",
+    "date": "2024-08-20",
+    "summary": "Monthly utility bill",
+    "category": "home-sandiego-utilities"
+  },
+  "Dr_Smith_Medical_Bill_20240515.pdf": {
+    "originator": "Dr. Smith",
+    "date": "2024-05-15",
+    "summary": "Medical bill for office visit",
+    "category": "medical-mikhaila"
+  },
+  "Kaiser_Permanente_Lab_Results_2024-07-10.pdf": {
+    "originator": "Kaiser Permanente",
+    "date": "2024-07-10",
+    "summary": "Laboratory test results",
+    "category": "medical-nikolai"
   }
 }

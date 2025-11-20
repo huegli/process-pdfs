@@ -22,6 +22,28 @@ def get_analysis_prompt(text: str, model_type: str = 'ollama') -> str:
         return _get_anthropic_analysis_prompt(text)
 
 
+def get_analysis_prompt_with_filename(
+    text: str,
+    filename: str,
+    model_type: str = 'ollama'
+) -> str:
+    """
+    Get analysis prompt that uses filename as a starting point.
+
+    Args:
+        text: Document text to analyze
+        filename: Name of the PDF file
+        model_type: 'ollama' for fast/conservative or 'anthropic' for detailed
+
+    Returns:
+        Formatted prompt string
+    """
+    if model_type == 'ollama':
+        return _get_ollama_analysis_prompt_with_filename(text, filename)
+    else:  # anthropic
+        return _get_anthropic_analysis_prompt_with_filename(text, filename)
+
+
 def get_categorization_prompt(
     text: str,
     category_rules: str,
@@ -149,3 +171,91 @@ Document text:
 
 Respond with ONLY a single line containing the category string.
 Do NOT include explanations."""
+
+
+def _get_ollama_analysis_prompt_with_filename(
+    text: str,
+    filename: str
+) -> str:
+    """Fast, conservative analysis prompt for Ollama using filename."""
+    return f"""Analyze this document and extract the following information in \
+JSON format.
+
+IMPORTANT: Use the filename as a starting point to help identify the \
+originator, date, summary, and categories.
+
+Filename: {filename}
+
+1. "originator": The PRIMARY company or organization name.
+   - First, examine the filename for company/organization clues
+   - Then verify/refine based on document content
+   - Use SHORT form (e.g., "Chase", "Vanguard", "PG&E")
+   - For doctors: "Dr. LastName" (e.g., "Dr. Smith")
+   - If unclear, use "Unknown"
+
+2. "date": The main document date.
+   - First, look for dates in the filename (YYYYMMDD or similar patterns)
+   - Then verify/refine with dates from document content
+   - Look for: document date, due date, statement date
+   - Use the format shown in the document
+   - If a date range is given, use the last date in the range
+   - Do not allow dates after 2025
+   - If no clear date, use "Unknown"
+
+3. "summary": Brief description of document type.
+   - Consider filename for document type hints
+   - Keep under 60 characters
+   - Examples: "Credit card statement", "Medical bill", "Utility bill"
+   - If unclear, use "Unknown"
+
+Document text:
+{text[:4000]}
+
+Respond with ONLY a JSON object:
+{{"originator": "...", "date": "...", "summary": "..."}}"""
+
+
+def _get_anthropic_analysis_prompt_with_filename(
+    text: str,
+    filename: str
+) -> str:
+    """Detailed, precise analysis prompt for Anthropic using filename."""
+    return f"""Analyze this document and extract the following information in \
+JSON format.
+
+IMPORTANT: Use the filename as a helpful starting point to identify the \
+originator, date, and document type. However, always verify and prioritize \
+information from the actual document content.
+
+Filename: {filename}
+
+1. "originator": The PRIMARY company, organization, or entity.
+   - First examine the filename for organization/company name clues
+   - Then verify and refine based on document content (letterheads, logos)
+   - Extract the main company name (e.g., "Chase", "Vanguard", "SDG&E")
+   - For medical: Include full doctor name (e.g., "Dr. John Smith")
+   - Do NOT include addresses or full legal entity names
+
+2. "date": The primary document date in YYYY-MM-DD format.
+   CRITICAL REQUIREMENTS:
+   - First check the filename for date patterns (YYYYMMDD, YYYY-MM-DD, etc.)
+   - Then verify with the main date IN THE DOCUMENT TEXT
+   - Use the document date if it differs from filename date
+   - Convert to YYYY-MM-DD format (e.g., "June 14, 2023" → "2023-06-14")
+   - If a date range is given use the last date in the range
+   - Verify year is between 2015-2025
+   - Do NOT make up dates or use future dates
+   - If no clear date exists, use "Unknown"
+
+3. "summary": Concise, specific description (MAXIMUM 60 characters).
+   - Consider filename for document type hints
+   - Be specific about document type and purpose
+   - Examples: "Credit card statement", "Medical bill for office visit"
+   - Do NOT include names, amounts, or excessive detail
+   - Focus on WHAT the document is
+
+Document text:
+{text[:4000]}
+
+Respond with ONLY a JSON object in this exact format:
+{{"originator": "...", "date": "...", "summary": "..."}}"""

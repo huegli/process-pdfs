@@ -23,6 +23,10 @@ from process_pdfs import (
     create_suggested_filename,
     process_pdfs
 )
+from process_pdfs.prompts import (
+    get_analysis_prompt,
+    get_analysis_prompt_with_filename
+)
 
 
 # Load test data fixture
@@ -353,7 +357,8 @@ class TestProcessPDFsWithTestData:
         # Set up mock returns based on test_data
         def analyze_side_effect(
             client, text, filename, use_ollama=True, model_type='ollama',
-            ollama_model='qwen2.5:7b', anthropic_model='claude-sonnet-4-5-20250929'
+            ollama_model='qwen2.5:7b', anthropic_model='claude-sonnet-4-5-20250929',
+            use_filename=False
         ):
             if filename in test_data:
                 data = test_data[filename]
@@ -727,6 +732,323 @@ class TestRecursiveSearchBehavior:
 
         # CSV should not be created when no PDFs in base directory
         assert not output_csv.exists()
+
+
+class TestFilenamePrompts:
+    """Tests for filename-aware prompting functions"""
+
+    def test_get_analysis_prompt_without_filename_ollama(self):
+        """Test regular analysis prompt doesn't include filename"""
+        text = "Sample document text for testing."
+        prompt = get_analysis_prompt(text, model_type='ollama')
+
+        assert "Filename:" not in prompt
+        assert "Sample document text" in prompt
+        assert "originator" in prompt.lower()
+        assert "date" in prompt.lower()
+        assert "summary" in prompt.lower()
+
+    def test_get_analysis_prompt_without_filename_anthropic(self):
+        """Test regular analysis prompt doesn't include filename (Anthropic)"""
+        text = "Sample document text for testing."
+        prompt = get_analysis_prompt(text, model_type='anthropic')
+
+        assert "Filename:" not in prompt
+        assert "Sample document text" in prompt
+        assert "YYYY-MM-DD" in prompt
+
+    def test_get_analysis_prompt_with_filename_ollama(self):
+        """Test filename-aware prompt includes filename (Ollama)"""
+        text = "Sample document text for testing."
+        filename = "Chase_Bank_20240315_Statement.pdf"
+        prompt = get_analysis_prompt_with_filename(
+            text, filename, model_type='ollama'
+        )
+
+        assert "Filename: Chase_Bank_20240315_Statement.pdf" in prompt
+        assert "Sample document text" in prompt
+        assert "examine the filename" in prompt.lower()
+        assert "starting point" in prompt.lower()
+
+    def test_get_analysis_prompt_with_filename_anthropic(self):
+        """Test filename-aware prompt includes filename (Anthropic)"""
+        text = "Sample document text for testing."
+        filename = "Vanguard_2024-06-30_Quarterly_Report.pdf"
+        prompt = get_analysis_prompt_with_filename(
+            text, filename, model_type='anthropic'
+        )
+
+        assert "Filename: Vanguard_2024-06-30_Quarterly_Report.pdf" in prompt
+        assert "Sample document text" in prompt
+        assert "starting point" in prompt.lower()
+        assert "verify and prioritize" in prompt.lower()
+
+    def test_filename_prompt_mentions_date_patterns(self):
+        """Test that filename prompt instructs LLM to look for date patterns"""
+        text = "Test text"
+        filename = "Company_20240515_Invoice.pdf"
+        prompt = get_analysis_prompt_with_filename(
+            text, filename, model_type='anthropic'
+        )
+
+        assert "filename for date patterns" in prompt.lower()
+        assert "YYYYMMDD" in prompt
+
+    def test_filename_prompt_mentions_company_clues(self):
+        """Test that filename prompt instructs LLM to look for company names"""
+        text = "Test text"
+        filename = "Dr_Smith_Medical_Bill.pdf"
+        prompt = get_analysis_prompt_with_filename(
+            text, filename, model_type='ollama'
+        )
+
+        assert "company/organization clues" in prompt.lower() or \
+               "organization/company name" in prompt.lower()
+
+
+class TestAnalyzeDocumentWithFilename:
+    """Tests for analyze_document with use_filename parameter"""
+
+    def test_analyze_without_filename_flag(self, mock_anthropic_client):
+        """Test that analyze_document works without filename flag"""
+        mock_message = Mock()
+        mock_message.content = [
+            Mock(text='{"originator": "Test Co", "date": "2024-08-20", '
+                      '"summary": "Test doc"}')
+        ]
+        mock_anthropic_client.messages.create.return_value = mock_message
+
+        text = "This is a test document with enough text to analyze. " * 10
+        result = analyze_document(
+            mock_anthropic_client, text, "Test_Company_20240820.pdf",
+            use_ollama=False, use_filename=False
+        )
+
+        assert result is not None
+        assert result["originator"] == "Test Co"
+        # Verify the prompt doesn't include filename instruction
+        call_args = mock_anthropic_client.messages.create.call_args
+        prompt = call_args[1]['messages'][0]['content']
+        assert "Filename:" not in prompt
+
+    def test_analyze_with_filename_flag(self, mock_anthropic_client):
+        """Test that analyze_document uses filename when flag is True"""
+        mock_message = Mock()
+        mock_message.content = [
+            Mock(text='{"originator": "Test Company", "date": "2024-08-20", '
+                      '"summary": "Test document"}')
+        ]
+        mock_anthropic_client.messages.create.return_value = mock_message
+
+        text = "This is a test document with enough text to analyze. " * 10
+        filename = "Test_Company_20240820_Invoice.pdf"
+        result = analyze_document(
+            mock_anthropic_client, text, filename,
+            use_ollama=False, use_filename=True
+        )
+
+        assert result is not None
+        assert result["originator"] == "Test Company"
+
+        # Verify the prompt includes filename instruction
+        call_args = mock_anthropic_client.messages.create.call_args
+        prompt = call_args[1]['messages'][0]['content']
+        assert f"Filename: {filename}" in prompt
+        assert "starting point" in prompt.lower()
+
+    def test_analyze_with_descriptive_filename_ollama(self):
+        """Test analyze_document with descriptive filename using Ollama"""
+        with patch('process_pdfs.cli.ollama.chat') as mock_ollama:
+            mock_ollama.return_value = {
+                'message': {
+                    'content': '{"originator": "Chase Bank", '
+                               '"date": "2024-03-15", '
+                               '"summary": "Monthly statement"}'
+                }
+            }
+
+            text = "Account statement details... " * 20
+            filename = "Chase_Bank_20240315_Statement.pdf"
+            result = analyze_document(
+                None, text, filename,
+                use_ollama=True, use_filename=True
+            )
+
+            assert result is not None
+            assert result["originator"] == "Chase Bank"
+            assert result["date"] == "2024-03-15"
+
+            # Verify filename was included in prompt
+            call_args = mock_ollama.call_args
+            prompt = call_args[1]['messages'][0]['content']
+            assert f"Filename: {filename}" in prompt
+
+
+class TestProcessPDFsWithFilename:
+    """Integration tests for process_pdfs with use_filename flag"""
+
+    @patch('process_pdfs.cli.extract_text_from_pdf')
+    @patch('process_pdfs.cli.analyze_document')
+    @patch('process_pdfs.cli.categorize')
+    def test_process_pdfs_with_use_filename_flag(
+        self, mock_categorize, mock_analyze, mock_extract_text,
+        temp_incoming_dir, test_data
+    ):
+        """Test that use_filename flag is passed through to analyze_document"""
+
+        mock_extract_text.return_value = "Test PDF text content."
+
+        # Track whether use_filename was passed correctly
+        use_filename_calls = []
+
+        def analyze_side_effect(
+            client, text, filename, use_ollama=True, model_type='ollama',
+            ollama_model='qwen2.5:7b', anthropic_model='claude-sonnet-4-5-20250929',
+            use_filename=False
+        ):
+            use_filename_calls.append(use_filename)
+            if filename in test_data:
+                data = test_data[filename]
+                return {
+                    "originator": data["originator"],
+                    "date": data["date"],
+                    "summary": data["summary"]
+                }
+            return None
+
+        def categorize_side_effect(
+            client, text, filename, category_rules, allowed_categories,
+            use_ollama=True, model_type='ollama', extra_category=None,
+            ollama_model='qwen2.5:7b',
+            anthropic_model='claude-sonnet-4-5-20250929'
+        ):
+            if filename in test_data:
+                return test_data[filename]["category"]
+            return "reviewcategory"
+
+        mock_analyze.side_effect = analyze_side_effect
+        mock_categorize.side_effect = categorize_side_effect
+
+        output_csv = temp_incoming_dir.parent / "test_with_filename.csv"
+
+        with patch('process_pdfs.cli.Anthropic'), \
+             patch('process_pdfs.cli.os.getenv', return_value='fake-api-key'):
+            # Process with use_filename=True
+            process_pdfs(temp_incoming_dir, output_csv, use_filename=True)
+
+        # Verify use_filename was passed as True
+        assert any(use_filename_calls), "analyze_document was not called"
+        assert all(use_filename_calls), \
+            "use_filename should be True for all calls"
+
+    @patch('process_pdfs.cli.extract_text_from_pdf')
+    @patch('process_pdfs.cli.analyze_document')
+    @patch('process_pdfs.cli.categorize')
+    def test_process_pdfs_without_use_filename_flag(
+        self, mock_categorize, mock_analyze, mock_extract_text,
+        temp_incoming_dir, test_data
+    ):
+        """Test that use_filename defaults to False"""
+
+        mock_extract_text.return_value = "Test PDF text content."
+
+        use_filename_calls = []
+
+        def analyze_side_effect(
+            client, text, filename, use_ollama=True, model_type='ollama',
+            ollama_model='qwen2.5:7b', anthropic_model='claude-sonnet-4-5-20250929',
+            use_filename=False
+        ):
+            use_filename_calls.append(use_filename)
+            if filename in test_data:
+                data = test_data[filename]
+                return {
+                    "originator": data["originator"],
+                    "date": data["date"],
+                    "summary": data["summary"]
+                }
+            return None
+
+        def categorize_side_effect(
+            client, text, filename, category_rules, allowed_categories,
+            use_ollama=True, model_type='ollama', extra_category=None,
+            ollama_model='qwen2.5:7b',
+            anthropic_model='claude-sonnet-4-5-20250929'
+        ):
+            if filename in test_data:
+                return test_data[filename]["category"]
+            return "reviewcategory"
+
+        mock_analyze.side_effect = analyze_side_effect
+        mock_categorize.side_effect = categorize_side_effect
+
+        output_csv = temp_incoming_dir.parent / "test_without_filename.csv"
+
+        with patch('process_pdfs.cli.Anthropic'), \
+             patch('process_pdfs.cli.os.getenv', return_value='fake-api-key'):
+            # Process without use_filename flag (should default to False)
+            process_pdfs(temp_incoming_dir, output_csv)
+
+        # Verify use_filename was passed as False (default)
+        assert len(use_filename_calls) > 0, "analyze_document was not called"
+        assert not any(use_filename_calls), \
+            "use_filename should be False for all calls (default)"
+
+    @patch('process_pdfs.cli.extract_text_from_pdf')
+    @patch('process_pdfs.cli.analyze_document')
+    @patch('process_pdfs.cli.categorize')
+    def test_hybrid_mode_with_use_filename(
+        self, mock_categorize, mock_analyze, mock_extract_text,
+        temp_incoming_dir, test_data
+    ):
+        """Test that use_filename works in hybrid mode"""
+
+        mock_extract_text.return_value = "Test PDF text content."
+
+        use_filename_calls = []
+
+        def analyze_side_effect(
+            client, text, filename, use_ollama=True, model_type='ollama',
+            ollama_model='qwen2.5:7b', anthropic_model='claude-sonnet-4-5-20250929',
+            use_filename=False
+        ):
+            use_filename_calls.append(use_filename)
+            if filename in test_data:
+                data = test_data[filename]
+                return {
+                    "originator": data["originator"],
+                    "date": data["date"],
+                    "summary": data["summary"]
+                }
+            return None
+
+        def categorize_side_effect(
+            client, text, filename, category_rules, allowed_categories,
+            use_ollama=True, model_type='ollama', extra_category=None,
+            ollama_model='qwen2.5:7b',
+            anthropic_model='claude-sonnet-4-5-20250929'
+        ):
+            if filename in test_data:
+                return test_data[filename]["category"]
+            return "reviewcategory"
+
+        mock_analyze.side_effect = analyze_side_effect
+        mock_categorize.side_effect = categorize_side_effect
+
+        output_csv = temp_incoming_dir.parent / "test_hybrid_filename.csv"
+
+        with patch('process_pdfs.cli.Anthropic'), \
+             patch('process_pdfs.cli.os.getenv', return_value='fake-api-key'):
+            # Process in hybrid mode with use_filename=True
+            process_pdfs(
+                temp_incoming_dir, output_csv,
+                use_hybrid=True, use_filename=True
+            )
+
+        # Verify use_filename was passed in hybrid mode
+        assert any(use_filename_calls), "analyze_document was not called"
+        assert all(use_filename_calls), \
+            "use_filename should be True in hybrid mode"
 
 
 if __name__ == "__main__":
