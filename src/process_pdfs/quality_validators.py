@@ -6,7 +6,45 @@ LLM or if they are acceptable as-is.
 """
 
 import re
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple, Set
+
+
+def validate_categories_against_allowed_list(
+    category_str: str,
+    allowed_categories: Set[str]
+) -> Tuple[bool, str]:
+    """
+    Validate that all categories are in the allowed list.
+
+    Args:
+        category_str: Category string (e.g., "banking_home_sandiego")
+        allowed_categories: Set of allowed category names
+
+    Returns:
+        Tuple of (is_valid, cleaned_category_str)
+    """
+    if not category_str or 'reviewcategory' in category_str:
+        return False, 'reviewcategory'
+
+    categories = category_str.split('_')
+    valid_categories = []
+    invalid_found = False
+
+    for cat in categories:
+        cat = cat.strip()
+        if cat in allowed_categories:
+            valid_categories.append(cat)
+        else:
+            invalid_found = True
+            print(f"  ⚠ Invalid category detected: '{cat}' (not in allowed list)")
+
+    # If all categories were invalid, return reviewcategory
+    if not valid_categories:
+        return False, 'reviewcategory'
+
+    # Return cleaned list (only valid categories)
+    cleaned = '_'.join(sorted(valid_categories))
+    return not invalid_found, cleaned
 
 
 def validate_date_format(date_str: str) -> float:
@@ -48,12 +86,16 @@ def validate_date_format(date_str: str) -> float:
     return 0.2
 
 
-def validate_category(category_str: str) -> bool:
+def validate_category(
+    category_str: str,
+    allowed_categories: Optional[Set[str]] = None
+) -> bool:
     """
     Check if category needs review.
 
     Args:
         category_str: Category string to validate
+        allowed_categories: Optional set of allowed category names
 
     Returns:
         True if category needs review, False if acceptable
@@ -65,12 +107,20 @@ def validate_category(category_str: str) -> bool:
     if 'reviewcategory' in category_str:
         return True
 
-    # Check for trailing dashes (formatting issue)
-    if category_str.endswith('-'):
+    # Check against allowed list if provided
+    if allowed_categories:
+        categories = category_str.split('_')
+        for cat in categories:
+            cat = cat.strip()
+            if cat and cat not in allowed_categories:
+                return True  # Invalid category, needs review
+
+    # Check for trailing underscores or dashes (formatting issue)
+    if category_str.endswith('_') or category_str.endswith('-'):
         return True
 
     # Check for empty categories after splitting
-    categories = category_str.split('-')
+    categories = category_str.split('_')
     if any(not cat.strip() for cat in categories):
         return True
 
