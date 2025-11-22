@@ -35,7 +35,8 @@ from .prompts import (
 )
 from .quality_validators import (
     should_refine_with_anthropic,
-    merge_results
+    merge_results,
+    validate_categories_against_allowed_list
 )
 
 # Load environment variables
@@ -227,11 +228,18 @@ def categorize(
         # Take only the first line if multiple lines are returned
         response_text = response_text.split('\n')[0].strip()
 
-        # Remove trailing dashes
-        response_text = response_text.rstrip('-')
+        # Remove trailing dashes and underscores
+        response_text = response_text.rstrip('-_')
+
+        # Parse allowed categories from the file content into a set
+        allowed_cats_set = set(
+            line.strip() for line in allowed_categories.split('\n')
+            if line.strip() and not line.startswith('#')
+        )
 
         # Split categories, remove duplicates, enforce max 4 rule
-        categories = response_text.split('-')
+        # Support both '-' and '_' as separators (normalize to '_')
+        categories = response_text.replace('-', '_').split('_')
         # Remove empty strings and duplicates while preserving order
         seen = set()
         unique_categories = []
@@ -245,15 +253,27 @@ def categorize(
         if len(unique_categories) > 4:
             unique_categories = unique_categories[:4]
 
-        # Add extra category if provided
-        if extra_category:
-            if extra_category not in unique_categories:
-                unique_categories.append(extra_category)
-
-        # Sort and rejoin
+        # Sort and rejoin with underscore
         response_text = "_".join(sorted(unique_categories))
 
-        return response_text
+        # Validate and clean categories against allowed list
+        is_valid, cleaned_response = validate_categories_against_allowed_list(
+            response_text, allowed_cats_set
+        )
+
+        if not is_valid:
+            print("  ⚠ Invalid categories found, using cleaned version")
+
+        # Add extra category AFTER validation (user override)
+        # This ensures extra_category is always included even if not in allowed list
+        if extra_category:
+            cleaned_cats = cleaned_response.split('_')
+            if extra_category not in cleaned_cats and 'reviewcategory' not in cleaned_cats:
+                cleaned_cats.append(extra_category)
+                # Re-sort and rejoin
+                cleaned_response = "_".join(sorted(cleaned_cats))
+
+        return cleaned_response
 
     except Exception as e:
         print(f"  ⚠ Error categorizing {filename}: {e}")

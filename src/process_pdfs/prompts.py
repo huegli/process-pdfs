@@ -4,6 +4,45 @@ LLM Prompt templates for document analysis and categorization.
 This module provides model-specific prompts optimized for different LLM backends.
 """
 
+import random
+
+
+def generate_category_examples(allowed_categories: str, num_examples: int = 5) -> str:
+    """
+    Generate random category examples from the allowed categories list.
+
+    Args:
+        allowed_categories: Content of allowed_categories.md file
+        num_examples: Number of examples to generate (default: 5)
+
+    Returns:
+        Formatted string with example category combinations
+    """
+    # Parse allowed categories
+    categories = [line.strip() for line in allowed_categories.split('\n')
+                  if line.strip() and not line.startswith('#')]
+
+    if len(categories) < 2:
+        return ""
+
+    examples = []
+
+    # Generate single category examples
+    single_cats = random.sample(categories, min(2, len(categories)))
+    for cat in single_cats:
+        examples.append(f'- "{cat}"')
+
+    # Generate multi-category examples (2-4 categories)
+    for _ in range(num_examples - 2):
+        num_cats = random.randint(2, min(4, len(categories)))
+        selected = sorted(random.sample(categories, num_cats))
+        examples.append(f'- "{"_".join(selected)}"')
+
+    # Always include reviewcategory as an option
+    examples.append('- "reviewcategory" (if no category fits)')
+
+    return "Examples of valid category responses:\n" + "\n".join(examples)
+
 
 def get_analysis_prompt(text: str, model_type: str = 'ollama') -> str:
     """
@@ -140,17 +179,30 @@ def _get_ollama_categorization_prompt(
     allowed_categories: str
 ) -> str:
     """Conservative categorization prompt for Ollama."""
+    # Generate random examples
+    examples = generate_category_examples(allowed_categories, num_examples=5)
+
     return f"""Categorize this document based on the rules and allowed \
 categories.
+
+CRITICAL INSTRUCTIONS:
+- You MUST use ONLY categories from the "Allowed Categories" list below
+- DO NOT create new categories or use variations
+- If no category fits, use "reviewcategory"
+- Categories must be joined with '_' (underscore)
+- Maximum 4 categories per document
 
 {category_rules}
 
 {allowed_categories}
 
+{examples}
+
 Document text:
 {text[:4000]}
 
-Respond with ONLY the category string on one line."""
+Respond with ONLY the category string (e.g., "banking_home_sandiego" or \
+"medical" or "reviewcategory"), nothing else."""
 
 
 def _get_anthropic_categorization_prompt(
@@ -159,12 +211,23 @@ def _get_anthropic_categorization_prompt(
     allowed_categories: str
 ) -> str:
     """Detailed categorization prompt for Anthropic with validation."""
+    # Generate random examples
+    examples = generate_category_examples(allowed_categories, num_examples=5)
+
     return f"""Categorize this document based on the rules and allowed \
 categories provided.
+
+IMPORTANT:
+- Use ONLY categories from the "Allowed Categories" list below
+- Categories must be joined with '_' (underscore)
+- If no category fits, use "reviewcategory"
+- Maximum 4 categories per document
 
 {category_rules}
 
 {allowed_categories}
+
+{examples}
 
 Document text:
 {text[:4000]}
