@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "process-pdfs"
-version = "0.2.0"
+version = "0.3.0"
 description = "Process scanned PDFs and extract structured information using LLMs"
 readme = "README.md"
 requires-python = ">=3.10"
